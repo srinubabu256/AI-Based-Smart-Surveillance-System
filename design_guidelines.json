@@ -1,0 +1,145 @@
+{
+  "design_system": {
+    "name": "Sentinel Academic",
+    "theme_strategy": "Clinical Precision",
+    "description": "A professional, institutional interface that balances academic clarity with the technical aesthetic of surveillance systems. Prioritizes data legibility and video visibility.",
+    "typography": {
+      "font_family": {
+        "headings": "Manrope, sans-serif",
+        "body": "Inter, sans-serif",
+        "mono": "JetBrains Mono, monospace"
+      },
+      "usage_rules": {
+        "headings": "Use Manrope for all page titles and card headers. Weight: 600 or 700. Tracking: tight.",
+        "body": "Use Inter for all standard text. Weight: 400 or 500.",
+        "data": "Use JetBrains Mono for timestamps, confidence scores, IP addresses, and log entries."
+      },
+      "installation": "Import from Google Fonts: https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&family=Manrope:wght@500;600;700&display=swap"
+    },
+    "colors": {
+      "palette": {
+        "light": {
+          "background": "#FFFFFF",
+          "surface": "#F8F9FA",
+          "surface_highlight": "#F1F5F9",
+          "border": "#E2E8F0",
+          "text_primary": "#0F172A",
+          "text_secondary": "#64748B"
+        },
+        "dark": {
+          "background": "#020617",
+          "surface": "#0F172A",
+          "surface_highlight": "#1E293B",
+          "border": "#1E293B",
+          "text_primary": "#F8FAFC",
+          "text_secondary": "#94A3B8"
+        },
+        "functional": {
+          "primary": "#3B82F6",
+          "success": "#22C55E",
+          "warning": "#F59E0B",
+          "danger": "#EF4444",
+          "neutral": "#64748B"
+        }
+      },
+      "usage": {
+        "primary_action": "Use functional.primary for main buttons (Start Surveillance).",
+        "alerts": "Use functional.danger for 'Incident Detected' badges and borders.",
+        "status": "Use functional.success for 'System Active' indicators.",
+        "gradients": "AVOID gradients. Use flat, solid colors for an institutional look."
+      }
+    },
+    "spacing": {
+      "scale": "Tailwind default",
+      "strategy": "Dense",
+      "rules": [
+        "Use p-4 or p-6 for main containers.",
+        "Use gap-2 or gap-3 for data grids (high density).",
+        "Use p-2 for table cells to maximize information density."
+      ]
+    },
+    "components": {
+      "radius": "rounded-sm",
+      "shadows": "shadow-sm",
+      "borders": "1px solid border-border",
+      "specifics": {
+        "cards": "Flat background (surface), 1px border, no shadow in dark mode, subtle shadow-sm in light mode.",
+        "buttons": "Height: h-9 (compact). Radius: rounded-md. Font-weight: 500.",
+        "inputs": "Background: transparent. Border: 1px solid input. Focus: ring-2 ring-primary/20.",
+        "video_feed": "Must have a 'Viewfinder' overlay (corner brackets) to simulate a camera feed interface."
+      }
+    },
+    "layout": {
+      "structure": "Sidebar Navigation (Left) + Main Content Area (Right)",
+      "dashboard_grid": "Bento Grid Mode B (High Density)",
+      "z_index": {
+        "overlays": 50,
+        "header": 40,
+        "video_controls": 30
+      }
+    },
+    "assets": {
+      "images": [
+        {
+          "category": "background_texture",
+          "url": "https://images.unsplash.com/photo-1765046255517-412341954c4c?crop=entropy&cs=srgb&fm=jpg&q=85",
+          "description": "Abstract white wavy surface with grid pattern. Use as a subtle background texture for the login page or empty states in Light Mode.",
+          "usage": "Login Page Background, Empty State Placeholder"
+        },
+        {
+          "category": "camera_offline",
+          "url": "https://images.unsplash.com/photo-1583106853354-9d88c18d46cf?crop=entropy&cs=srgb&fm=jpg&q=85",
+          "description": "Black camera lens close up. Use for 'Camera Offline' or 'No Signal' states.",
+          "usage": "Video Feed Placeholder"
+        },
+        {
+          "category": "security_context",
+          "url": "https://images.unsplash.com/photo-1610428338782-b33a39286d38?crop=entropy&cs=srgb&fm=jpg&q=85",
+          "description": "White round light bulb/camera on white wall. Use for 'About' or 'System Info' cards.",
+          "usage": "Info Card Header"
+        }
+      ],
+      "icons": "Lucide React (default). Use 'CCTV', 'ShieldAlert', 'Activity', 'History' icons."
+    },
+    "motion": {
+      "strategy": "Minimal & Functional",
+      "transitions": "transition-all duration-200 ease-in-out",
+      "rules": [
+        "No bouncing or spring animations.",
+        "Use simple fades (opacity-0 to opacity-100) for modal entrances.",
+        "Use subtle color transitions for hover states."
+      ]
+    }
+  },
+  "instructions_to_main_agent": {
+    "setup": [
+      "Install 'clsx' and 'tailwind-merge' if not present (already in package.json).",
+      "Ensure 'lucide-react' is used for all icons.",
+      "Add the Google Fonts link to the public/index.html file immediately."
+    ],
+    "implementation_priorities": [
+      "1. Create the 'Layout' component with the Sidebar and Header.",
+      "2. Build the 'VideoFeed' component with the custom 'Viewfinder' overlay (CSS borders on corners).",
+      "3. Implement the 'IncidentLog' component using a dense table or list view.",
+      "4. Ensure the 'ThemeToggle' works correctly (using 'next-themes' or manual class toggling)."
+    ],
+    "critical_constraints": [
+      "DO NOT use gradients for backgrounds. Keep it flat and professional.",
+      "Ensure the 'Incident Detected' alert is visually distinct (Red border + Red badge).",
+      "The video feed must be responsive. Use 'aspect-video' class."
+    ]
+  },
+  "universal_guidelines": [
+    "Dark colors look good when used independently without gradients. DO NOT use dark colors as gradients",
+    "Don't make generic centered layouts, simplistic gradients, and uniform styling.",
+    "Create depth through layered design elements with z-index hierarchy",
+    "Use glass-morphism effects with backdrop filters (12-24px blur) sparingly, only for overlays.",
+    "You MUST NOT apply universal transition. Eg: 'transition: all'. This results in breaking transforms.",
+    "You MUST NOT center align the app container.",
+    "Always use modern button styles like pill-shaped, or sharp button with interaction animations.",
+    "NEVER use AI assistant Emoji characters for icons.",
+    "Every interaction needs micro-animations - hover states, transitions.",
+    "Use 2-3x more spacing than feels comfortable in the 'Marketing' sections, but keep 'Dashboard' sections dense.",
+    "All interactive and key informational elements MUST include a 'data-testid' attribute."
+  ]
+}
