@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { AlertCircle, Users, Activity, Camera } from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
-import { Alert, AlertDescription } from '../components/ui/alert';
-import { Badge } from '../components/ui/badge';
+import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card.jsx';
+import { Alert, AlertDescription } from '../components/ui/alert.jsx';
+import { Badge } from '../components/ui/badge.jsx';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 
