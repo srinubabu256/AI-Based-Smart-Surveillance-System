@@ -107,12 +107,58 @@ def detect_motion(frame1, frame2, sensitivity='medium'):
     return significant_motion
 
 def detect_humans(frame):
-    """Detect humans in frame using HOG"""
+    """Detect humans in frame using HOG with optimized parameters"""
     try:
-        boxes, weights = hog.detectMultiScale(frame, winStride=(8,8), padding=(4,4), scale=1.05)
-        return len(boxes) > 0, len(boxes)
-    except:
-        return False, 0
+        # Resize frame for better detection if too large
+        height, width = frame.shape[:2]
+        if width > 640:
+            scale_factor = 640 / width
+            frame = cv2.resize(frame, (640, int(height * scale_factor)))
+        
+        # Use optimized HOG parameters for better detection
+        boxes, weights = hog.detectMultiScale(
+            frame, 
+            winStride=(4, 4),      # Smaller stride for better detection
+            padding=(8, 8),         # More padding
+            scale=1.05,             # Scale factor
+            hitThreshold=0,         # Lower threshold for better sensitivity
+            finalThreshold=1.5      # Grouping threshold
+        )
+        
+        # Filter by confidence (weights)
+        if len(boxes) > 0 and len(weights) > 0:
+            # Keep detections with reasonable confidence
+            valid_detections = [(box, weight) for box, weight in zip(boxes, weights) if weight > 0.3]
+            valid_boxes = [box for box, _ in valid_detections]
+            valid_weights = [weight for _, weight in valid_detections]
+            return len(valid_boxes) > 0, len(valid_boxes), valid_boxes, valid_weights
+        
+        return False, 0, [], []
+    except Exception as e:
+        logger.error(f"Human detection error: {e}")
+        return False, 0, [], []
+
+def detect_faces(frame):
+    """Detect faces using Haar Cascade for multi-person face capture"""
+    try:
+        # Load face cascade (using frontal face detector)
+        face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
+        
+        # Convert to grayscale for face detection
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        
+        # Detect faces
+        faces = face_cascade.detectMultiScale(
+            gray,
+            scaleFactor=1.1,
+            minNeighbors=5,
+            minSize=(30, 30)
+        )
+        
+        return len(faces) > 0, len(faces), faces
+    except Exception as e:
+        logger.error(f"Face detection error: {e}")
+        return False, 0, []
 
 async def save_incident(frame, detection_type='motion', confidence=0.85):
     """Save incident to database and file system"""
@@ -152,36 +198,84 @@ async def get_surveillance_status():
         total_incidents=total_incidents
     )
 
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler("backend.log"),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
+
+class MockVideoCapture:
+    """Generates synthetic video frames when real camera is unavailable"""
+    def __init__(self):
+        self.is_opened = True
+    
+    def isOpened(self):
+        return self.is_opened
+    
+    def read(self):
+        if not self.is_opened:
+            return False, None
+        
+        # Create a dummy frame (black background)
+        frame = np.zeros((480, 640, 3), np.uint8)
+        
+        # Add some dynamic movement (simulated noise/circles)
+        t = datetime.now().timestamp()
+        cv2.circle(frame, (320 + int(100 * np.sin(t)), 240 + int(50 * np.cos(t))), 30, (0, 255, 255), -1)
+        
+        # Add text
+        cv2.putText(frame, "MOCK CAMERA - NO WEBCAM FOUND", (50, 240), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+        cv2.putText(frame, datetime.now().strftime("%H:%M:%S"), (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+        
+        return True, frame
+    
+    def release(self):
+        self.is_opened = False
+
 @api_router.post("/surveillance/start")
 async def start_surveillance(config: SurveillanceConfig):
     global surveillance_active, video_capture, detection_sensitivity
     
     if surveillance_active:
-        raise HTTPException(status_code=400, detail="Surveillance already active")
+        return {"status": "started", "sensitivity": detection_sensitivity, "message": "Already active"}
     
     try:
+        logger.info("Attempting to open webcam...")
         video_capture = cv2.VideoCapture(0)
+        
         if not video_capture.isOpened():
-            raise HTTPException(status_code=500, detail="Could not open webcam")
+            logger.warning("Failed to open real webcam. Switching to Mock Camera fallback.")
+            video_capture = MockVideoCapture()
+            # Note: We don't raise error here, we proceed with mock
+        else:
+            logger.info("Real webcam opened successfully.")
         
         surveillance_active = True
         detection_sensitivity = config.sensitivity
         return {"status": "started", "sensitivity": detection_sensitivity}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Error starting surveillance: {e}")
+        # Try fallback one last time in case of exception
+        video_capture = MockVideoCapture()
+        surveillance_active = True
+        return {"status": "started_fallback", "sensitivity": detection_sensitivity, "details": str(e)}
 
 @api_router.post("/surveillance/stop")
 async def stop_surveillance():
     global surveillance_active, video_capture
     
-    if not surveillance_active:
-        raise HTTPException(status_code=400, detail="Surveillance not active")
-    
+    # Always succeed in stopping to reset state
     surveillance_active = False
     if video_capture:
         video_capture.release()
         video_capture = None
     
+    logger.info("Surveillance stopped.")
     return {"status": "stopped"}
 
 @api_router.post("/surveillance/upload")
@@ -213,14 +307,20 @@ async def upload_video(file: UploadFile = File(...), sensitivity: str = 'medium'
             if frame_count % 10 != 0:
                 continue
             
-            # Detect humans
-            humans_detected, count = detect_humans(curr_frame)
+            # Detect humans with improved detection
+            humans_detected, count, boxes, weights = detect_humans(curr_frame)
+            
+            # Calculate dynamic confidence
+            confidence = 0.70
+            if len(weights) > 0:
+                confidence = min(sum(weights) / len(weights) / 2.0, 1.0)
+                confidence = max(confidence, 0.70)
             
             # Detect motion
             motion_detected = detect_motion(prev_frame, curr_frame, sensitivity)
             
             if humans_detected and motion_detected:
-                await save_incident(curr_frame, 'motion+human', 0.90)
+                await save_incident(curr_frame, 'motion+human', confidence)
                 incidents_detected += 1
             
             prev_frame = curr_frame.copy()
@@ -324,69 +424,128 @@ async def video_stream(websocket: WebSocket):
     
     global surveillance_active, video_capture, detection_sensitivity
     
-    if not surveillance_active or not video_capture:
-        await websocket.send_json({"error": "Surveillance not active"})
-        await websocket.close()
-        return
-    
-    prev_frame = None
-    last_incident_time = datetime.now()
-    
     try:
-        while surveillance_active:
+        while True:
+            if not surveillance_active or not video_capture:
+                # Send idle status instead of closing
+                await websocket.send_json({
+                    "frame": None,
+                    "status": "idle",
+                    "message": "Surveillance system is currently inactive."
+                })
+                await asyncio.sleep(1) # Check every second
+                continue
+            
+            # Surveillance is active, read frames
             ret, frame = video_capture.read()
             if not ret:
-                break
+                # Failed to read frame (camera disconnected?)
+                await websocket.send_json({"error": "Failed to capture video frame"})
+                await asyncio.sleep(1)
+                continue
             
-            # Detect humans
-            humans_detected, human_count = detect_humans(frame)
+            # Detect humans with improved HOG
+            humans_detected, human_count, human_boxes, human_weights = detect_humans(frame)
+            
+            # Detect faces for multi-person face capture
+            faces_detected, face_count, face_boxes = detect_faces(frame)
+            
+            # Use the higher count between HOG and face detection
+            final_count = max(human_count, face_count)
+            final_detected = humans_detected or faces_detected
+            
+            # Calculate dynamic confidence based on detection weights
+            avg_confidence = 0.0
+            if len(human_weights) > 0:
+                # Normalize weights to 0-1 range and calculate average
+                avg_confidence = min(sum(human_weights) / len(human_weights) / 2.0, 1.0)
+            elif faces_detected:
+                # If only faces detected, use moderate confidence
+                avg_confidence = 0.75
             
             # Detect motion
             motion_detected = False
-            if prev_frame is not None:
+            if 'prev_frame' in locals() and prev_frame is not None:
                 motion_detected = detect_motion(prev_frame, frame, detection_sensitivity)
-            
+            else:
+                 prev_frame = frame.copy()
+
             # Save incident if both detected and cooldown passed
             incident_detected = False
-            if humans_detected and motion_detected:
+            if 'last_incident_time' not in locals():
+                last_incident_time = datetime.now()
+
+            if final_detected and motion_detected:
                 time_since_last = (datetime.now() - last_incident_time).seconds
                 if time_since_last > 5:  # 5 second cooldown
-                    await save_incident(frame, 'live_motion+human', 0.85)
+                    # Use dynamic confidence
+                    incident_confidence = max(avg_confidence, 0.70)
+                    await save_incident(frame, 'live_motion+human', incident_confidence)
                     incident_detected = True
                     last_incident_time = datetime.now()
             
-            # Draw detection boxes
-            if humans_detected:
-                boxes, _ = hog.detectMultiScale(frame, winStride=(8,8), padding=(4,4), scale=1.05)
-                for (x, y, w, h) in boxes:
+            # Draw detection boxes for humans (HOG)
+            if humans_detected and len(human_boxes) > 0:
+                for (x, y, w, h) in human_boxes:
                     cv2.rectangle(frame, (x, y), (x+w, y+h), (0, 255, 0), 2)
+                    # Add label above each detected person
+                    cv2.putText(frame, "PERSON", (x, y-10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
             
-            # Add status text
-            status_text = f"Humans: {human_count} | Motion: {'YES' if motion_detected else 'NO'}"
+            # Draw face boxes (different color to distinguish)
+            if faces_detected and len(face_boxes) > 0:
+                for (x, y, w, h) in face_boxes:
+                    cv2.rectangle(frame, (x, y), (x+w, y+h), (255, 255, 0), 2)  # Yellow for faces
+                    cv2.putText(frame, "FACE", (x, y-10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 2)
+            
+            # Add status text with background for better visibility
+            status_text = f"Humans: {final_count} | Motion: {'YES' if motion_detected else 'NO'}"
+            
+            # Draw background rectangle for text
+            text_size = cv2.getTextSize(status_text, cv2.FONT_HERSHEY_SIMPLEX, 0.7, 2)[0]
+            cv2.rectangle(frame, (5, 5), (15 + text_size[0], 40), (0, 0, 0), -1)
             cv2.putText(frame, status_text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+            
+            # Add confidence indicator
+            if avg_confidence > 0:
+                conf_text = f"Confidence: {avg_confidence*100:.1f}%"
+                conf_size = cv2.getTextSize(conf_text, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)[0]
+                cv2.rectangle(frame, (5, 45), (15 + conf_size[0], 75), (0, 0, 0), -1)
+                cv2.putText(frame, conf_text, (10, 65), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 0), 2)
+            
+            # Add large count indicator in top right if humans detected
+            if final_count > 0:
+                count_text = f"COUNT: {final_count}"
+                count_size = cv2.getTextSize(count_text, cv2.FONT_HERSHEY_SIMPLEX, 1.2, 3)[0]
+                frame_width = frame.shape[1]
+                cv2.rectangle(frame, (frame_width - count_size[0] - 20, 5), (frame_width - 5, 50), (0, 0, 0), -1)
+                cv2.putText(frame, count_text, (frame_width - count_size[0] - 15, 35), cv2.FONT_HERSHEY_SIMPLEX, 1.2, (0, 255, 255), 3)
+            
             
             # Encode frame
             _, buffer = cv2.imencode('.jpg', frame)
             frame_base64 = base64.b64encode(buffer).decode('utf-8')
             
-            # Send frame
+            # Send frame with all detection data
             await websocket.send_json({
                 "frame": frame_base64,
-                "humans_detected": humans_detected,
+                "humans_detected": final_detected,
+                "human_count": final_count,
+                "face_count": face_count,
+                "confidence": round(avg_confidence * 100, 2),  # Send as percentage
                 "motion_detected": motion_detected,
-                "incident_detected": incident_detected
+                "incident_detected": incident_detected,
+                "status": "active"
             })
             
             prev_frame = frame.copy()
             await asyncio.sleep(0.05)  # ~20 FPS
             
     except WebSocketDisconnect:
-        pass
+        logger.info("WebSocket disconnected")
     except Exception as e:
-        logging.error(f"WebSocket error: {e}")
-    finally:
+        logger.error(f"WebSocket error: {e}")
         try:
-            await websocket.close()
+             await websocket.close()
         except:
             pass
 

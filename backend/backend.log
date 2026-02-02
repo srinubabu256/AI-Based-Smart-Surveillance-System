@@ -1,0 +1,160 @@
+2026-02-02 12:14:01,195 - server - INFO - Attempting to open webcam...
+2026-02-02 12:14:07,920 - server - INFO - Real webcam opened successfully.
+2026-02-02 12:14:35,897 - server - ERROR - WebSocket error: received 1005 (no status received [internal]); then sent 1005 (no status received [internal])
+2026-02-02 12:14:38,163 - server - INFO - Surveillance stopped.
+2026-02-02 12:14:48,727 - server - ERROR - WebSocket error: received 1005 (no status received [internal]); then sent 1005 (no status received [internal])
+2026-02-02 12:15:47,387 - server - ERROR - WebSocket error: received 1005 (no status received [internal]); then sent 1005 (no status received [internal])
+2026-02-02 12:19:16,019 - server - INFO - Attempting to open webcam...
+2026-02-02 12:19:24,229 - server - INFO - Real webcam opened successfully.
+2026-02-02 12:19:36,147 - server - INFO - Surveillance stopped.
+2026-02-02 12:19:41,176 - server - ERROR - WebSocket error: received 1005 (no status received [internal]); then sent 1005 (no status received [internal])
+2026-02-02 12:25:30,146 - server - ERROR - WebSocket error: received 1005 (no status received [internal]); then sent 1005 (no status received [internal])
+2026-02-02 12:25:40,923 - server - ERROR - WebSocket error: received 1005 (no status received [internal]); then sent 1005 (no status received [internal])
+2026-02-02 12:25:45,976 - server - INFO - Attempting to open webcam...
+2026-02-02 12:25:58,434 - server - INFO - Real webcam opened successfully.
+2026-02-02 12:26:53,642 - server - INFO - Surveillance stopped.
+2026-02-02 12:26:56,692 - server - ERROR - WebSocket error: received 1005 (no status received [internal]); then sent 1005 (no status received [internal])
+2026-02-02 12:27:34,611 - server - ERROR - WebSocket error: received 1005 (no status received [internal]); then sent 1005 (no status received [internal])
+2026-02-02 12:27:35,997 - server - INFO - Attempting to open webcam...
+2026-02-02 12:27:46,572 - server - INFO - Real webcam opened successfully.
+2026-02-02 12:28:40,871 - server - INFO - Surveillance stopped.
+2026-02-02 12:28:44,905 - server - ERROR - WebSocket error: received 1005 (no status received [internal]); then sent 1005 (no status received [internal])
+2026-02-02 12:29:42,931 - server - ERROR - WebSocket error: received 1005 (no status received [internal]); then sent 1005 (no status received [internal])
+2026-02-02 12:29:43,759 - server - INFO - Attempting to open webcam...
+2026-02-02 12:29:53,389 - server - INFO - Real webcam opened successfully.
+2026-02-02 12:29:53,977 - server - ERROR - WebSocket error: no close frame received or sent
+2026-02-02 12:33:55,876 - server - ERROR - WebSocket error: received 1005 (no status received [internal]); then sent 1005 (no status received [internal])
+2026-02-02 12:34:07,638 - server - ERROR - WebSocket error: sent 1012 (service restart); no close frame received
+2026-02-02 12:34:07,830 - server - ERROR - WebSocket error: sent 1012 (service restart); no close frame received
+2026-02-02 12:34:42,564 - server - ERROR - WebSocket error: sent 1012 (service restart); no close frame received
+2026-02-02 12:37:59,719 - server - ERROR - WebSocket error: received 1005 (no status received [internal]); then sent 1005 (no status received [internal])
+2026-02-02 12:38:49,531 - server - ERROR - WebSocket error: received 1005 (no status received [internal]); then sent 1005 (no status received [internal])
+2026-02-02 12:40:48,103 - server - ERROR - WebSocket error: received 1005 (no status received [internal]); then sent 1005 (no status received [internal])
+2026-02-02 12:40:51,814 - server - INFO - Attempting to open webcam...
+2026-02-02 12:40:57,368 - server - INFO - Real webcam opened successfully.
+2026-02-02 12:40:58,692 - server - ERROR - Error in human detection: invalid index to scalar variable.
+2026-02-02 12:40:59,688 - server - ERROR - Error in human detection: invalid index to scalar variable.
+2026-02-02 12:41:00,188 - server - ERROR - Error in human detection: invalid index to scalar variable.
+2026-02-02 12:41:03,135 - server - ERROR - Error in human detection: invalid index to scalar variable.
+2026-02-02 12:41:03,462 - server - ERROR - Error in human detection: invalid index to scalar variable.
+2026-02-02 12:41:06,413 - server - ERROR - Error in human detection: invalid index to scalar variable.
+2026-02-02 12:41:06,718 - server - ERROR - Error in human detection: invalid index to scalar variable.
+2026-02-02 12:41:07,012 - server - ERROR - Error in human detection: invalid index to scalar variable.
+2026-02-02 12:41:07,621 - server - ERROR - Error in human detection: invalid index to scalar variable.
+2026-02-02 12:41:07,965 - server - ERROR - Error in human detection: invalid index to scalar variable.
+2026-02-02 12:41:08,311 - server - ERROR - Error in human detection: invalid index to scalar variable.
+2026-02-02 12:41:08,619 - server - ERROR - Error in human detection: invalid index to scalar variable.
+2026-02-02 12:41:10,245 - server - ERROR - Error in human detection: invalid index to scalar variable.
+2026-02-02 12:41:10,543 - server - ERROR - Error in human detection: invalid index to scalar variable.
+2026-02-02 12:41:12,059 - server - ERROR - Error in human detection: invalid index to scalar variable.
+2026-02-02 12:41:13,784 - server - ERROR - Error in human detection: invalid index to scalar variable.
+2026-02-02 12:41:14,400 - server - ERROR - Error in human detection: invalid index to scalar variable.
+2026-02-02 12:41:15,583 - server - ERROR - Error in human detection: invalid index to scalar variable.
+2026-02-02 12:41:15,932 - server - ERROR - Error in human detection: invalid index to scalar variable.
+2026-02-02 12:41:16,273 - server - ERROR - Error in human detection: invalid index to scalar variable.
+2026-02-02 12:41:17,390 - server - ERROR - Error in human detection: invalid index to scalar variable.
+2026-02-02 12:41:18,744 - server - ERROR - Error in human detection: invalid index to scalar variable.
+2026-02-02 12:41:19,360 - server - ERROR - Error in human detection: invalid index to scalar variable.
+2026-02-02 12:41:19,825 - server - ERROR - Error in human detection: invalid index to scalar variable.
+2026-02-02 12:41:20,250 - server - ERROR - Error in human detection: invalid index to scalar variable.
+2026-02-02 12:41:20,659 - server - ERROR - Error in human detection: invalid index to scalar variable.
+2026-02-02 12:41:23,597 - server - ERROR - Error in human detection: invalid index to scalar variable.
+2026-02-02 12:41:23,988 - server - ERROR - Error in human detection: invalid index to scalar variable.
+2026-02-02 12:41:24,375 - server - ERROR - Error in human detection: invalid index to scalar variable.
+2026-02-02 12:41:25,833 - server - ERROR - Error in human detection: invalid index to scalar variable.
+2026-02-02 12:41:27,825 - server - ERROR - Error in human detection: invalid index to scalar variable.
+2026-02-02 12:41:28,584 - server - ERROR - Error in human detection: invalid index to scalar variable.
+2026-02-02 12:41:28,948 - server - ERROR - Error in human detection: invalid index to scalar variable.
+2026-02-02 12:41:29,695 - server - ERROR - Error in human detection: invalid index to scalar variable.
+2026-02-02 12:41:30,101 - server - ERROR - Error in human detection: invalid index to scalar variable.
+2026-02-02 12:41:31,605 - server - ERROR - Error in human detection: invalid index to scalar variable.
+2026-02-02 12:41:33,334 - server - ERROR - Error in human detection: invalid index to scalar variable.
+2026-02-02 12:41:35,964 - server - ERROR - Error in human detection: invalid index to scalar variable.
+2026-02-02 12:41:37,289 - server - ERROR - Error in human detection: invalid index to scalar variable.
+2026-02-02 12:41:38,850 - server - ERROR - Error in human detection: invalid index to scalar variable.
+2026-02-02 12:41:39,207 - server - ERROR - Error in human detection: invalid index to scalar variable.
+2026-02-02 12:41:40,331 - server - ERROR - Error in human detection: invalid index to scalar variable.
+2026-02-02 12:41:41,488 - server - ERROR - Error in human detection: invalid index to scalar variable.
+2026-02-02 12:41:41,950 - server - ERROR - Error in human detection: invalid index to scalar variable.
+2026-02-02 12:41:42,890 - server - ERROR - Error in human detection: invalid index to scalar variable.
+2026-02-02 12:41:44,188 - server - ERROR - Error in human detection: invalid index to scalar variable.
+2026-02-02 12:41:49,956 - server - ERROR - Error in human detection: invalid index to scalar variable.
+2026-02-02 12:41:51,312 - server - ERROR - Error in human detection: invalid index to scalar variable.
+2026-02-02 12:41:51,759 - server - ERROR - Error in human detection: invalid index to scalar variable.
+2026-02-02 12:41:55,042 - server - INFO - Surveillance stopped.
+2026-02-02 12:41:55,053 - server - ERROR - WebSocket error: received 1005 (no status received [internal]); then sent 1005 (no status received [internal])
+2026-02-02 12:43:06,697 - server - ERROR - WebSocket error: received 1001 (going away); then sent 1001 (going away)
+2026-02-02 12:43:06,889 - server - ERROR - WebSocket error: received 1001 (going away); then sent 1001 (going away)
+2026-02-02 12:43:06,891 - server - ERROR - WebSocket error: received 1001 (going away); then sent 1001 (going away)
+2026-02-02 12:43:06,891 - server - ERROR - WebSocket error: received 1001 (going away); then sent 1001 (going away)
+2026-02-02 12:43:06,892 - server - ERROR - WebSocket error: received 1001 (going away); then sent 1001 (going away)
+2026-02-02 12:43:18,762 - server - ERROR - WebSocket error: received 1005 (no status received [internal]); then sent 1005 (no status received [internal])
+2026-02-02 12:43:39,955 - server - INFO - Attempting to open webcam...
+2026-02-02 12:43:44,434 - server - INFO - Real webcam opened successfully.
+2026-02-02 12:43:45,097 - server - ERROR - Error in human detection: invalid index to scalar variable.
+2026-02-02 12:43:46,398 - server - ERROR - Error in human detection: invalid index to scalar variable.
+2026-02-02 12:43:46,688 - server - ERROR - Error in human detection: invalid index to scalar variable.
+2026-02-02 12:43:47,248 - server - ERROR - Error in human detection: invalid index to scalar variable.
+2026-02-02 12:43:47,828 - server - ERROR - Error in human detection: invalid index to scalar variable.
+2026-02-02 12:43:48,266 - server - ERROR - Error in human detection: invalid index to scalar variable.
+2026-02-02 12:43:48,867 - server - ERROR - Error in human detection: invalid index to scalar variable.
+2026-02-02 12:43:51,871 - server - ERROR - Error in human detection: invalid index to scalar variable.
+2026-02-02 12:43:52,207 - server - ERROR - Error in human detection: invalid index to scalar variable.
+2026-02-02 12:43:54,647 - server - ERROR - Error in human detection: invalid index to scalar variable.
+2026-02-02 12:43:54,930 - server - ERROR - Error in human detection: invalid index to scalar variable.
+2026-02-02 12:43:55,263 - server - ERROR - Error in human detection: invalid index to scalar variable.
+2026-02-02 12:43:57,600 - server - ERROR - Error in human detection: invalid index to scalar variable.
+2026-02-02 12:43:58,227 - server - ERROR - Error in human detection: invalid index to scalar variable.
+2026-02-02 12:43:58,518 - server - ERROR - Error in human detection: invalid index to scalar variable.
+2026-02-02 12:43:58,790 - server - ERROR - Error in human detection: invalid index to scalar variable.
+2026-02-02 12:43:59,145 - server - ERROR - Error in human detection: invalid index to scalar variable.
+2026-02-02 12:44:00,741 - server - ERROR - Error in human detection: invalid index to scalar variable.
+2026-02-02 12:44:01,051 - server - ERROR - Error in human detection: invalid index to scalar variable.
+2026-02-02 12:44:01,335 - server - ERROR - Error in human detection: invalid index to scalar variable.
+2026-02-02 12:44:02,253 - server - ERROR - Error in human detection: invalid index to scalar variable.
+2026-02-02 12:44:02,527 - server - ERROR - Error in human detection: invalid index to scalar variable.
+2026-02-02 12:44:03,493 - server - ERROR - Error in human detection: invalid index to scalar variable.
+2026-02-02 12:44:03,777 - server - ERROR - Error in human detection: invalid index to scalar variable.
+2026-02-02 12:44:04,062 - server - ERROR - Error in human detection: invalid index to scalar variable.
+2026-02-02 12:44:04,339 - server - ERROR - Error in human detection: invalid index to scalar variable.
+2026-02-02 12:44:04,628 - server - ERROR - Error in human detection: invalid index to scalar variable.
+2026-02-02 12:44:04,904 - server - ERROR - Error in human detection: invalid index to scalar variable.
+2026-02-02 12:44:05,493 - server - ERROR - Error in human detection: invalid index to scalar variable.
+2026-02-02 12:44:07,142 - server - ERROR - Error in human detection: invalid index to scalar variable.
+2026-02-02 12:44:10,049 - server - ERROR - Error in human detection: invalid index to scalar variable.
+2026-02-02 12:44:10,352 - server - INFO - Surveillance stopped.
+2026-02-02 12:44:13,403 - server - ERROR - WebSocket error: received 1005 (no status received [internal]); then sent 1005 (no status received [internal])
+2026-02-02 12:44:16,407 - server - ERROR - WebSocket error: received 1001 (going away); then sent 1001 (going away)
+2026-02-02 12:44:16,409 - server - ERROR - WebSocket error: received 1001 (going away); then sent 1001 (going away)
+2026-02-02 12:44:26,012 - server - ERROR - WebSocket error: received 1005 (no status received [internal]); then sent 1005 (no status received [internal])
+2026-02-02 12:44:54,648 - server - ERROR - WebSocket error: sent 1012 (service restart); no close frame received
+2026-02-02 12:44:54,784 - server - ERROR - WebSocket error: sent 1012 (service restart); no close frame received
+2026-02-02 12:44:55,073 - server - ERROR - WebSocket error: sent 1012 (service restart); no close frame received
+2026-02-02 12:44:55,077 - server - ERROR - WebSocket error: sent 1012 (service restart); no close frame received
+2026-02-02 12:45:00,183 - server - ERROR - WebSocket error: received 1005 (no status received [internal]); then sent 1005 (no status received [internal])
+2026-02-02 12:45:02,746 - server - ERROR - WebSocket error: received 1001 (going away); then sent 1001 (going away)
+2026-02-02 12:45:03,167 - server - ERROR - WebSocket error: received 1001 (going away); then sent 1001 (going away)
+2026-02-02 12:45:05,303 - server - ERROR - WebSocket error: received 1005 (no status received [internal]); then sent 1005 (no status received [internal])
+2026-02-02 12:45:10,196 - server - ERROR - WebSocket error: received 1005 (no status received [internal]); then sent 1005 (no status received [internal])
+2026-02-02 12:45:12,073 - server - INFO - Attempting to open webcam...
+2026-02-02 12:45:15,872 - server - INFO - Real webcam opened successfully.
+2026-02-02 12:45:40,662 - server - INFO - Surveillance stopped.
+2026-02-02 12:45:43,663 - server - ERROR - WebSocket error: received 1005 (no status received [internal]); then sent 1005 (no status received [internal])
+2026-02-02 12:54:05,834 - server - ERROR - WebSocket error: received 1005 (no status received [internal]); then sent 1005 (no status received [internal])
+2026-02-02 12:54:07,539 - server - INFO - Attempting to open webcam...
+2026-02-02 12:54:12,823 - server - INFO - Real webcam opened successfully.
+2026-02-02 12:55:42,146 - server - INFO - Surveillance stopped.
+2026-02-02 12:55:45,172 - server - ERROR - WebSocket error: received 1005 (no status received [internal]); then sent 1005 (no status received [internal])
+2026-02-02 13:00:12,140 - server - ERROR - WebSocket error: received 1005 (no status received [internal]); then sent 1005 (no status received [internal])
+2026-02-02 13:03:39,070 - server - INFO - Attempting to open webcam...
+2026-02-02 13:04:01,377 - server - INFO - Real webcam opened successfully.
+2026-02-02 13:04:54,453 - server - INFO - Surveillance stopped.
+2026-02-02 13:04:57,479 - server - ERROR - WebSocket error: received 1005 (no status received [internal]); then sent 1005 (no status received [internal])
+2026-02-02 13:05:12,056 - server - ERROR - WebSocket error: received 1005 (no status received [internal]); then sent 1005 (no status received [internal])
+2026-02-02 13:05:28,834 - server - ERROR - WebSocket error: received 1005 (no status received [internal]); then sent 1005 (no status received [internal])
+2026-02-02 13:06:00,110 - server - ERROR - WebSocket error: received 1005 (no status received [internal]); then sent 1005 (no status received [internal])
+2026-02-02 13:06:28,891 - server - ERROR - WebSocket error: received 1005 (no status received [internal]); then sent 1005 (no status received [internal])
+2026-02-02 13:12:00,556 - server - INFO - Attempting to open webcam...
+2026-02-02 13:12:20,477 - server - INFO - Real webcam opened successfully.
+2026-02-02 13:13:14,779 - server - INFO - Surveillance stopped.
+2026-02-02 13:13:23,874 - server - ERROR - WebSocket error: received 1005 (no status received [internal]); then sent 1005 (no status received [internal])

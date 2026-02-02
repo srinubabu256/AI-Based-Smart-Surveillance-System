@@ -1,15 +1,22 @@
 import { useState, useEffect, useRef } from 'react';
-import { AlertCircle, Users, Activity, Camera } from 'lucide-react';
+import { AlertCircle, Users, Activity, Camera, StopCircle } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card.jsx';
 import { Alert, AlertDescription } from '../components/ui/alert.jsx';
 import { Badge } from '../components/ui/badge.jsx';
+import { Button } from '../components/ui/button.jsx';
+import { toast } from 'sonner';
+import axios from 'axios';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
+const API = `${BACKEND_URL}/api`;
 
 export default function LiveMonitoring() {
   const [connected, setConnected] = useState(false);
   const [frame, setFrame] = useState(null);
   const [humansDetected, setHumansDetected] = useState(false);
+  const [humanCount, setHumanCount] = useState(0);
+  const [faceCount, setFaceCount] = useState(0);
+  const [confidence, setConfidence] = useState(0);
   const [motionDetected, setMotionDetected] = useState(false);
   const [incidentDetected, setIncidentDetected] = useState(false);
   const [error, setError] = useState(null);
@@ -40,10 +47,24 @@ export default function LiveMonitoring() {
           setError(data.error);
           return;
         }
+
+        if (data.status === 'idle') {
+          setConnected(true); // It is connected, just idle
+          setFrame(null);
+          setHumanCount(0);
+          setFaceCount(0);
+          setConfidence(0);
+          return;
+        }
+
         setFrame(data.frame);
         setHumansDetected(data.humans_detected);
+        setHumanCount(data.human_count || 0);
+        setFaceCount(data.face_count || 0);
+        setConfidence(data.confidence || 0);
         setMotionDetected(data.motion_detected);
         setIncidentDetected(data.incident_detected);
+        setConnected(true);
       } catch (err) {
         console.error('Failed to parse WebSocket message:', err);
       }
@@ -51,15 +72,26 @@ export default function LiveMonitoring() {
 
     ws.onerror = (err) => {
       console.error('WebSocket error:', err);
-      setError('Connection error');
+      // Don't set hard error immediately on typical disconnects, let close handle it
     };
 
     ws.onclose = () => {
       setConnected(false);
-      setError('Surveillance not active. Please start surveillance from Dashboard.');
+      // Only show error if we expected it to be open. 
+      // For now, just reset state.
     };
 
     wsRef.current = ws;
+  };
+
+  const handleStopSurveillance = async () => {
+    try {
+      await axios.post(`${API}/surveillance/stop`);
+      toast.success('Surveillance stopped');
+      setFrame(null);
+    } catch (error) {
+      toast.error('Failed to stop surveillance');
+    }
   };
 
   return (
@@ -91,11 +123,21 @@ export default function LiveMonitoring() {
           {/* Video Feed */}
           <div className="lg:col-span-2">
             <Card>
-              <CardHeader>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle className="flex items-center gap-2">
                   <Camera className="w-5 h-5" />
                   Video Feed
                 </CardTitle>
+                {frame && (
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    onClick={handleStopSurveillance}
+                  >
+                    <StopCircle className="w-4 h-4 mr-2" />
+                    Stop Surveillance
+                  </Button>
+                )}
               </CardHeader>
               <CardContent>
                 <div className="relative bg-black rounded-sm overflow-hidden aspect-video" data-testid="video-feed">
@@ -138,9 +180,11 @@ export default function LiveMonitoring() {
                     <Users className="w-4 h-4 text-muted-foreground" />
                     <span className="text-sm font-medium">Humans</span>
                   </div>
-                  <Badge variant={humansDetected ? 'default' : 'secondary'}>
-                    {humansDetected ? 'Detected' : 'None'}
-                  </Badge>
+                  <div className="flex items-center gap-2">
+                    <Badge variant={humansDetected ? 'default' : 'secondary'}>
+                      {humanCount > 0 ? `${humanCount} ${humanCount === 1 ? 'Person' : 'Persons'}` : 'None'}
+                    </Badge>
+                  </div>
                 </div>
 
                 <div className="flex items-center justify-between p-3 rounded-sm border border-border" data-testid="motion-detection-status">
@@ -180,7 +224,17 @@ export default function LiveMonitoring() {
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Detection</span>
-                  <span className="font-medium mono">HOG+Motion</span>
+                  <span className="font-medium mono">HOG+Face</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Faces Detected</span>
+                  <span className="font-medium mono">{faceCount}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Confidence</span>
+                  <span className={`font-medium mono ${confidence > 70 ? 'text-green-500' : confidence > 50 ? 'text-yellow-500' : 'text-gray-500'}`}>
+                    {confidence > 0 ? `${confidence.toFixed(1)}%` : 'N/A'}
+                  </span>
                 </div>
               </CardContent>
             </Card>

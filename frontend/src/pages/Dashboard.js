@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Play, Upload, Activity, AlertCircle, FileVideo } from 'lucide-react';
 import { Button } from '../components/ui/button.jsx';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card.jsx';
@@ -11,6 +11,7 @@ const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
 
 export default function Dashboard() {
+  const navigate = useNavigate();
   const [status, setStatus] = useState(null);
   const [sensitivity, setSensitivity] = useState('medium');
   const [uploading, setUploading] = useState(false);
@@ -34,8 +35,12 @@ export default function Dashboard() {
   const handleStartSurveillance = async () => {
     try {
       await axios.post(`${API}/surveillance/start`, { sensitivity });
-      toast.success('Surveillance started successfully');
+      toast.success('Surveillance started! Redirecting to Live Monitor...');
       fetchStatus();
+      // Auto-navigate to Live Monitoring after 1 second
+      setTimeout(() => {
+        navigate('/live');
+      }, 1000);
     } catch (error) {
       toast.error(error.response?.data?.detail || 'Failed to start surveillance');
     }
@@ -165,6 +170,7 @@ export default function Dashboard() {
                   <SelectContent>
                     <SelectItem value="high">High - More sensitive</SelectItem>
                     <SelectItem value="medium">Medium - Balanced</SelectItem>
+                    <SelectItem value="low">Low - Less sensitive</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -256,9 +262,8 @@ export default function Dashboard() {
                   <CardContent className="pt-4">
                     <div className="flex items-start gap-2">
                       <AlertCircle
-                        className={`w-4 h-4 mt-0.5 ${
-                          uploadProgress.status === 'error' ? 'text-destructive' : 'text-primary'
-                        }`}
+                        className={`w-4 h-4 mt-0.5 ${uploadProgress.status === 'error' ? 'text-destructive' : 'text-primary'
+                          }`}
                       />
                       <p className="text-sm">{uploadProgress.message}</p>
                     </div>
