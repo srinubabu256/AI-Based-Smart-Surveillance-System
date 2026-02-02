@@ -1,5 +1,5 @@
 import { Link, useLocation } from 'react-router-dom';
-import { CCTV, Activity, History, Moon, Sun, ShieldAlert } from 'lucide-react';
+import { Cctv, Activity, History, Moon, Sun, ShieldAlert } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { Button } from './ui/button.jsx';
 
