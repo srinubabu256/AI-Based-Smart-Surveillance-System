@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
 import { Trash2, Download, AlertCircle, Clock, RefreshCw } from 'lucide-react';
-import { Button } from '../components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
-import { Badge } from '../components/ui/badge';
+import { Button } from '../components/ui/button.jsx';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card.jsx';
+import { Badge } from '../components/ui/badge.jsx';
 import { toast } from 'sonner';
 import axios from 'axios';
 import { format } from 'date-fns';
