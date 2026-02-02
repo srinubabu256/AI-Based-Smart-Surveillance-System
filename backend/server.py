@@ -32,6 +32,10 @@ INCIDENTS_DB = ROOT_DIR / 'incidents.db'
 INCIDENTS_DIR = ROOT_DIR / 'incidents'
 INCIDENTS_DIR.mkdir(exist_ok=True)
 
+# Recordings directory
+RECORDINGS_DIR = ROOT_DIR / 'recordings'
+RECORDINGS_DIR.mkdir(exist_ok=True)
+
 # Create the main app
 app = FastAPI()
 api_router = APIRouter(prefix="/api")
@@ -40,6 +44,9 @@ api_router = APIRouter(prefix="/api")
 surveillance_active = False
 video_capture = None
 detection_sensitivity = 'medium'
+video_writer = None  # For recording video
+recording_active = False
+current_recording_path = None
 
 # Initialize HOG detector for human detection
 hog = cv2.HOGDescriptor()
@@ -215,6 +222,64 @@ async def save_incident(frame, detection_type='motion', confidence=0.85):
         await db.commit()
     
     return incident_id
+
+def start_recording(frame_width, frame_height, fps=20.0):
+    """Start video recording"""
+    global video_writer, recording_active, current_recording_path
+    
+    try:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"recording_{timestamp}.mp4"
+        current_recording_path = RECORDINGS_DIR / filename
+        
+        # Use MP4V codec for better compatibility
+        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+        video_writer = cv2.VideoWriter(
+            str(current_recording_path),
+            fourcc,
+            fps,
+            (frame_width, frame_height)
+        )
+        
+        if video_writer.isOpened():
+            recording_active = True
+            logger.info(f"Recording started: {filename}")
+            return True
+        else:
+            logger.error("Failed to initialize video writer")
+            return False
+    except Exception as e:
+        logger.error(f"Error starting recording: {e}")
+        return False
+
+def stop_recording():
+    """Stop video recording"""
+    global video_writer, recording_active, current_recording_path
+    
+    try:
+        if video_writer:
+            video_writer.release()
+            video_writer = None
+            recording_active = False
+            logger.info(f"Recording stopped: {current_recording_path}")
+            return True
+    except Exception as e:
+        logger.error(f"Error stopping recording: {e}")
+    
+    return False
+
+def write_frame_to_recording(frame):
+    """Write a frame to the active recording"""
+    global video_writer, recording_active
+    
+    try:
+        if recording_active and video_writer and video_writer.isOpened():
+            video_writer.write(frame)
+            return True
+    except Exception as e:
+        logger.error(f"Error writing frame to recording: {e}")
+    
+    return False
 
 # API Routes
 @api_router.get("/")
@@ -458,15 +523,26 @@ async def get_incident_image(incident_id: str):
 async def video_stream(websocket: WebSocket):
     await websocket.accept()
     
-    global surveillance_active, video_capture, detection_sensitivity
+    global surveillance_active, video_capture, detection_sensitivity, recording_active
+    
+    # Initialize recording when stream starts
+    recording_started = False
+    prev_frame = None
+    last_incident_time = datetime.now()
     
     try:
         while True:
             if not surveillance_active or not video_capture:
+                # Stop recording if it was active
+                if recording_started:
+                    stop_recording()
+                    recording_started = False
+                
                 # Send idle status instead of closing
                 await websocket.send_json({
                     "frame": None,
                     "status": "idle",
+                    "recording": False,
                     "message": "Surveillance system is currently inactive."
                 })
                 await asyncio.sleep(1) # Check every second
@@ -479,6 +555,16 @@ async def video_stream(websocket: WebSocket):
                 await websocket.send_json({"error": "Failed to capture video frame"})
                 await asyncio.sleep(1)
                 continue
+            
+            # Start recording on first successful frame
+            if not recording_started:
+                height, width = frame.shape[:2]
+                if start_recording(width, height):
+                    recording_started = True
+            
+            # Write frame to recording
+            if recording_started:
+                write_frame_to_recording(frame.copy())
             
             # Detect humans with improved HOG
             humans_detected, human_count, human_boxes, human_weights = detect_humans(frame)
@@ -501,16 +587,13 @@ async def video_stream(websocket: WebSocket):
             
             # Detect motion
             motion_detected = False
-            if 'prev_frame' in locals() and prev_frame is not None:
+            if prev_frame is not None:
                 motion_detected = detect_motion(prev_frame, frame, detection_sensitivity)
             else:
-                 prev_frame = frame.copy()
+                prev_frame = frame.copy()
 
             # Save incident if both detected and cooldown passed
             incident_detected = False
-            if 'last_incident_time' not in locals():
-                last_incident_time = datetime.now()
-
             if final_detected and motion_detected:
                 time_since_last = (datetime.now() - last_incident_time).seconds
                 if time_since_last > 5:  # 5 second cooldown
@@ -548,6 +631,15 @@ async def video_stream(websocket: WebSocket):
                 cv2.rectangle(frame, (5, 45), (15 + conf_size[0], 75), (0, 0, 0), -1)
                 cv2.putText(frame, conf_text, (10, 65), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 0), 2)
             
+            # Add recording indicator
+            if recording_started:
+                rec_text = "REC"
+                rec_size = cv2.getTextSize(rec_text, cv2.FONT_HERSHEY_SIMPLEX, 0.7, 2)[0]
+                frame_width = frame.shape[1]
+                # Red circle for recording indicator
+                cv2.circle(frame, (frame_width - 80, 25), 10, (0, 0, 255), -1)
+                cv2.putText(frame, rec_text, (frame_width - 65, 32), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+            
             # Add large count indicator in top right if humans detected
             if final_count > 0:
                 count_text = f"COUNT: {final_count}"
@@ -570,6 +662,7 @@ async def video_stream(websocket: WebSocket):
                 "confidence": round(avg_confidence * 100, 2),  # Send as percentage
                 "motion_detected": motion_detected,
                 "incident_detected": incident_detected,
+                "recording": recording_started,
                 "status": "active"
             })
             
@@ -578,8 +671,12 @@ async def video_stream(websocket: WebSocket):
             
     except WebSocketDisconnect:
         logger.info("WebSocket disconnected")
+        if recording_started:
+            stop_recording()
     except Exception as e:
         logger.error(f"WebSocket error: {e}")
+        if recording_started:
+            stop_recording()
         try:
              await websocket.close()
         except:
