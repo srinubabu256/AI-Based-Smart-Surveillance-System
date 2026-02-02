@@ -1,7 +1,7 @@
 import { Link, useLocation } from 'react-router-dom';
 import { CCTV, Activity, History, Moon, Sun, ShieldAlert } from 'lucide-react';
 import { useTheme } from 'next-themes';
-import { Button } from './ui/button';
+import { Button } from './ui/button.jsx';
 
 export default function Layout({ children }) {
   const location = useLocation();
