@@ -305,6 +305,6 @@ Fields: id, timestamp, image_path, confidence, detection_type
 
 ---
 
-**For installation and usage, see QUICK_START.md**
+**For installation and usage, see [README.md](README.md)**
 
 **For complete documentation, see README.md**

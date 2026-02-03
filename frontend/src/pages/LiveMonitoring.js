@@ -36,119 +36,132 @@ export default function LiveMonitoring() {
   const lastFpsUpdateRef = useRef(Date.now());
 
   useEffect(() => {
-    connectWebSocket();
+    let timeoutId;
+    let ws;
+
+    const connect = () => {
+      if (wsRef.current?.readyState === WebSocket.OPEN) return;
+
+      const wsUrl = BACKEND_URL.replace('https://', 'wss://').replace('http://', 'ws://');
+      ws = new WebSocket(`${wsUrl}/api/surveillance/stream`);
+      wsRef.current = ws;
+
+      ws.onopen = () => {
+        console.log('WebSocket Connected');
+        setConnected(true);
+        setError(null);
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data.error) {
+            setError(data.error);
+            return;
+          }
+
+          if (data.status === 'idle') {
+            setConnected(true);
+            setFrame(null);
+            setHumanCount(0);
+            setFaceCount(0);
+            setConfidence(0);
+            setRecording(false);
+            setMovementDirection('Standing');
+            setActivityLevel(0);
+            return;
+          }
+
+          setFrame(data.frame);
+          setHumansDetected(data.humans_detected);
+
+          const currentCount = data.human_count || 0;
+          setHumanCount(currentCount);
+          setFaceCount(data.face_count || 0);
+
+          const currentConfidence = data.confidence || 0;
+          setConfidence(currentConfidence);
+
+          // Update confidence history
+          setAvgConfidenceHistory(prev => {
+            const newHistory = [...prev, currentConfidence];
+            return newHistory.slice(-10); // Keep last 10 readings
+          });
+
+          setMotionDetected(data.motion_detected);
+          setIncidentDetected(data.incident_detected);
+          setRecording(data.recording || false);
+          setConnected(true);
+
+          // Track unique people
+          if (currentCount > 0) {
+            setTotalDetections(prev => prev + 1);
+            setUniquePeople(prev => {
+              const newSet = new Set(prev);
+              newSet.add(`person_${Date.now()}_${currentCount}`);
+              const arr = Array.from(newSet);
+              return new Set(arr.slice(-100));
+            });
+          }
+
+          // Calculate movement direction (Real data from backend now)
+          if (data.movement_direction) {
+            setMovementDirection(data.movement_direction);
+
+            // Calculate activity level based on motion and people count
+            if (data.motion_detected && currentCount > 0 && data.movement_direction !== 'Standing') {
+              setActivityLevel(Math.min(100, 50 + (currentCount * 10)));
+            } else if (data.motion_detected) {
+              setActivityLevel(30);
+            } else {
+              setActivityLevel(0);
+            }
+          } else {
+            // Fallback if backend doesn't send it yet
+            if (data.motion_detected && currentCount > 0) {
+              setMovementDirection('Moving');
+              setActivityLevel(60);
+            } else {
+              setMovementDirection('Standing');
+              setActivityLevel(0);
+            }
+          }
+
+        } catch (err) {
+          console.error('Failed to parse WebSocket message:', err);
+        }
+      };
+
+      ws.onerror = (err) => {
+        // Only log if not in closing state to avoid noise during unmount
+        if (ws.readyState !== WebSocket.CLOSED && ws.readyState !== WebSocket.CLOSING) {
+          console.error('WebSocket error:', err);
+          setError("Connection error");
+        }
+      };
+
+      ws.onclose = () => {
+        setConnected(false);
+        // Attempt reconnect after 3 seconds
+        timeoutId = setTimeout(() => {
+          console.log('Attempting to reconnect...');
+          connect();
+        }, 3000);
+      };
+    };
+
+    connect();
+
     return () => {
+      if (timeoutId) clearTimeout(timeoutId);
       if (wsRef.current) {
+        // Use a flag or check state to prevent 'closed before established' noise if possible
+        // but strictly closing is correct.
         wsRef.current.close();
+        wsRef.current = null;
       }
     };
   }, []);
-
-  // Calculate FPS
-  useEffect(() => {
-    if (frame) {
-      frameCountRef.current++;
-      const now = Date.now();
-      const elapsed = (now - lastFpsUpdateRef.current) / 1000;
-
-      if (elapsed >= 1) {
-        setFps(Math.round(frameCountRef.current / elapsed));
-        frameCountRef.current = 0;
-        lastFpsUpdateRef.current = now;
-      }
-    }
-  }, [frame]);
-
-  const connectWebSocket = () => {
-    const wsUrl = BACKEND_URL.replace('https://', 'wss://').replace('http://', 'ws://');
-    const ws = new WebSocket(`${wsUrl}/api/surveillance/stream`);
-
-    ws.onopen = () => {
-      setConnected(true);
-      setError(null);
-    };
-
-    ws.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-        if (data.error) {
-          setError(data.error);
-          return;
-        }
-
-        if (data.status === 'idle') {
-          setConnected(true);
-          setFrame(null);
-          setHumanCount(0);
-          setFaceCount(0);
-          setConfidence(0);
-          setRecording(false);
-          setMovementDirection('Standing');
-          setActivityLevel(0);
-          return;
-        }
-
-        setFrame(data.frame);
-        setHumansDetected(data.humans_detected);
-
-        const currentCount = data.human_count || 0;
-        setHumanCount(currentCount);
-        setFaceCount(data.face_count || 0);
-
-        const currentConfidence = data.confidence || 0;
-        setConfidence(currentConfidence);
-
-        // Update confidence history
-        setAvgConfidenceHistory(prev => {
-          const newHistory = [...prev, currentConfidence];
-          return newHistory.slice(-10); // Keep last 10 readings
-        });
-
-        setMotionDetected(data.motion_detected);
-        setIncidentDetected(data.incident_detected);
-        setRecording(data.recording || false);
-        setConnected(true);
-
-        // Track unique people
-        if (currentCount > 0) {
-          setTotalDetections(prev => prev + 1);
-          setUniquePeople(prev => {
-            const newSet = new Set(prev);
-            newSet.add(`person_${Date.now()}_${currentCount}`);
-            const arr = Array.from(newSet);
-            return new Set(arr.slice(-100));
-          });
-        }
-
-        // Calculate movement direction (simplified for now)
-        if (data.motion_detected && currentCount > 0) {
-          const directions = ['Moving Left', 'Moving Right', 'Moving Up', 'Moving Down'];
-          const randomDir = directions[Math.floor(Math.random() * directions.length)];
-          setMovementDirection(randomDir);
-          setActivityLevel(Math.floor(Math.random() * 50) + 50);
-        } else if (currentCount > 0) {
-          setMovementDirection('Standing');
-          setActivityLevel(Math.floor(Math.random() * 30));
-        } else {
-          setMovementDirection('Standing');
-          setActivityLevel(0);
-        }
-
-      } catch (err) {
-        console.error('Failed to parse WebSocket message:', err);
-      }
-    };
-
-    ws.onerror = (err) => {
-      console.error('WebSocket error:', err);
-    };
-
-    ws.onclose = () => {
-      setConnected(false);
-    };
-
-    wsRef.current = ws;
-  };
 
   const handleStopSurveillance = async () => {
     try {
@@ -373,7 +386,7 @@ export default function LiveMonitoring() {
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Current</span>
                   <span className={`font-bold ${confidence >= 80 ? 'text-green-500' :
-                      confidence >= 50 ? 'text-yellow-500' : 'text-red-500'
+                    confidence >= 50 ? 'text-yellow-500' : 'text-red-500'
                     }`}>
                     {confidence.toFixed(1)}%
                   </span>
@@ -387,7 +400,7 @@ export default function LiveMonitoring() {
                 <div className="w-full bg-gray-200 rounded-full h-2">
                   <div
                     className={`h-2 rounded-full transition-all duration-300 ${confidence >= 80 ? 'bg-green-500' :
-                        confidence >= 50 ? 'bg-yellow-500' : 'bg-red-500'
+                      confidence >= 50 ? 'bg-yellow-500' : 'bg-red-500'
                       }`}
                     style={{ width: `${confidence}%` }}
                   />

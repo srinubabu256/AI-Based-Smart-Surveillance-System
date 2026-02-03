@@ -46,9 +46,10 @@ export default function Incidents() {
   };
 
   const cleanupOldIncidents = async () => {
+    if (!window.confirm("Are you sure you want to delete ALL incidents? This cannot be undone.")) return;
     try {
-      const response = await axios.delete(`${API}/incidents/old/cleanup?days=7`);
-      toast.success(`Cleaned up ${response.data.deleted_count} old incidents`);
+      const response = await axios.delete(`${API}/incidents/old/cleanup?days=0`);
+      toast.success(`Cleared ${response.data.deleted_count} incidents`);
       fetchIncidents();
     } catch (error) {
       toast.error('Failed to cleanup incidents');
@@ -67,7 +68,10 @@ export default function Incidents() {
   const stats = {
     total: incidents.length,
     humanDetections: incidents.filter((i) => i.detection_type.includes('human')).length,
-    motionOnly: incidents.filter((i) => i.detection_type === 'motion' && !i.detection_type.includes('human')).length,
+    maxHumans: incidents.reduce((max, i) => {
+      const count = i.human_count || (i.detection_type.includes('human') ? 1 : 0);
+      return Math.max(max, count);
+    }, 0),
     avgConfidence: incidents.length > 0
       ? (incidents.reduce((sum, i) => sum + (i.confidence * 100), 0) / incidents.length)
       : 0,
@@ -86,7 +90,7 @@ export default function Incidents() {
     .filter((incident) => {
       if (filter === 'all') return true;
       if (filter === 'human') return incident.detection_type.includes('human');
-      if (filter === 'motion') return incident.detection_type === 'motion' && !incident.detection_type.includes('human');
+      if (filter === 'motion') return incident.detection_type.includes('motion') && !incident.detection_type.includes('human');
       return true;
     })
     .sort((a, b) => {
@@ -112,7 +116,7 @@ export default function Incidents() {
             </Button>
             <Button variant="destructive" onClick={cleanupOldIncidents} data-testid="cleanup-old-btn">
               <Trash2 className="w-4 h-4 mr-2" />
-              Cleanup Old (7d+)
+              Clear All History
             </Button>
           </div>
         </div>
@@ -151,18 +155,18 @@ export default function Incidents() {
             </CardContent>
           </Card>
 
-          {/* Motion Only */}
+          {/* Max People Detected (Replaces Motion Only) */}
           <Card className="border-l-4 border-l-orange-500">
             <CardHeader className="pb-3">
               <div className="flex items-center justify-between">
-                <CardTitle className="text-sm font-medium text-muted-foreground">Motion Only</CardTitle>
-                <Activity className="w-4 h-4 text-orange-500" />
+                <CardTitle className="text-sm font-medium text-muted-foreground">Max People</CardTitle>
+                <Users className="w-4 h-4 text-orange-500" />
               </div>
             </CardHeader>
             <CardContent>
-              <div className="text-3xl font-bold">{stats.motionOnly}</div>
+              <div className="text-3xl font-bold">{stats.maxHumans}</div>
               <p className="text-xs text-muted-foreground mt-1">
-                Without human detection
+                Highest count in single frame
               </p>
             </CardContent>
           </Card>
@@ -328,52 +332,94 @@ export default function Incidents() {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {filteredIncidents.map((incident) => {
               const confidencePercent = (incident.confidence * 100).toFixed(1);
-              const confidenceColor =
-                confidencePercent >= 80 ? 'text-green-500' :
-                  confidencePercent >= 50 ? 'text-yellow-500' : 'text-red-500';
+              const isHighConf = confidencePercent >= 80;
+              const isMedConf = confidencePercent >= 50 && confidencePercent < 80;
+
+              const confidenceColor = isHighConf ? 'text-green-500' : isMedConf ? 'text-yellow-500' : 'text-red-500';
+              const confidenceBg = isHighConf ? 'bg-green-500/10' : isMedConf ? 'bg-yellow-500/10' : 'bg-red-500/10';
+              const confidenceBorder = isHighConf ? 'border-green-500/20' : isMedConf ? 'border-yellow-500/20' : 'border-red-500/20';
+
+              const hasMotion = incident.detection_type.includes('motion');
+              const hasHuman = incident.detection_type.includes('human');
 
               return (
-                <Card key={incident.id} className="overflow-hidden hover:shadow-lg transition-shadow" data-testid={`incident-card-${incident.id}`}>
-                  <div className="aspect-video bg-black relative group">
+                <Card
+                  key={incident.id}
+                  className="group overflow-hidden hover:shadow-xl transition-all duration-300 border-border/50 bg-card/50 backdrop-blur-sm"
+                  data-testid={`incident-card-${incident.id}`}
+                >
+                  {/* Image Section */}
+                  <div className="aspect-video bg-black relative overflow-hidden">
                     <img
                       src={`${API}/incidents/${incident.id}/image`}
                       alt="Incident"
-                      className="w-full h-full object-cover"
+                      className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
                       data-testid={`incident-image-${incident.id}`}
                     />
-                    <Badge
-                      className="absolute top-2 right-2"
-                      variant={incident.detection_type.includes('human') ? 'destructive' : 'default'}
-                    >
-                      {incident.detection_type.replace('live_', '').replace('+', ' + ').toUpperCase()}
-                    </Badge>
-                    <div className={`absolute top-2 left-2 px-2 py-1 rounded text-xs font-bold ${confidenceColor} bg-black/70`}>
-                      {confidencePercent}%
+
+                    {/* Overlay Gradient */}
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-60" />
+
+                    {/* Top Badges */}
+                    <div className="absolute top-3 left-3 flex gap-2">
+                      <Badge variant="secondary" className="bg-black/60 hover:bg-black/70 backdrop-blur-md border-white/10 text-white text-xs font-mono">
+                        {format(new Date(incident.timestamp), 'HH:mm:ss')}
+                      </Badge>
+                    </div>
+
+                    <div className="absolute top-3 right-3 flex gap-2">
+                      {hasMotion && (
+                        <Badge className="bg-orange-500/90 hover:bg-orange-600 border-none text-white shadow-lg animate-in fade-in zoom-in duration-300">
+                          <Activity className="w-3 h-3 mr-1 animate-pulse" />
+                          MOTION
+                        </Badge>
+                      )}
+                      {hasHuman && (
+                        <Badge className="bg-blue-500/90 hover:bg-blue-600 border-none text-white shadow-lg">
+                          <Users className="w-3 h-3 mr-1" />
+                          {incident.human_count > 0 ? `${incident.human_count} HUMAN${incident.human_count > 1 ? 'S' : ''}` : 'HUMAN'}
+                        </Badge>
+                      )}
                     </div>
                   </div>
+
+                  {/* Content Section */}
                   <CardContent className="p-4">
-                    <div className="space-y-2">
-                      <div className="flex items-start gap-2 text-sm">
-                        <Clock className="w-4 h-4 mt-0.5 text-muted-foreground flex-shrink-0" />
-                        <span className="mono text-xs">{formatTimestamp(incident.timestamp)}</span>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm text-muted-foreground">
-                            Confidence:
-                          </span>
-                          <span className={`font-bold mono ${confidenceColor}`}>
-                            {confidencePercent}%
-                          </span>
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="flex items-center gap-3">
+                        <div className={`flex items-center justify-center w-10 h-10 rounded-full ${confidenceBg} ${confidenceBorder} border`}>
+                          <TrendingUp className={`w-5 h-5 ${confidenceColor}`} />
                         </div>
+                        <div>
+                          <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Confidence</p>
+                          <p className={`text-lg font-bold ${confidenceColor} font-mono leading-none`}>
+                            {confidencePercent}%
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex gap-1">
+
                         <Button
                           variant="ghost"
-                          size="sm"
+                          size="icon"
+                          className="h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
                           onClick={() => deleteIncident(incident.id)}
                           data-testid={`delete-incident-${incident.id}`}
+                          title="Delete Incident"
                         >
-                          <Trash2 className="w-4 h-4 text-destructive" />
+                          <Trash2 className="w-4 h-4" />
                         </Button>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between text-xs text-muted-foreground border-t pt-3 mt-2">
+                      <div className="flex items-center gap-1.5">
+                        <Calendar className="w-3.5 h-3.5" />
+                        <span>{format(new Date(incident.timestamp), 'MMM d, yyyy')}</span>
+                      </div>
+                      <div className="font-mono opacity-50">
+                        ID: {incident.id.slice(0, 8)}
                       </div>
                     </div>
                   </CardContent>
