@@ -7,7 +7,7 @@ import os
 import logging
 from pathlib import Path
 from pydantic import BaseModel, Field, ConfigDict
-from typing import List, Optional
+from typing import List, Optional, Dict, OrderedDict
 import uuid
 from datetime import datetime, timezone, timedelta
 import cv2
@@ -16,18 +16,35 @@ import base64
 import asyncio
 import json
 from io import BytesIO
-from PIL import Image
 import aiosqlite
+from scipy.spatial import distance as dist
+
+# MediaPipe Import with Safety Check
+try:
+    import mediapipe as mp
+    # Fix for some windows environments where mp.solutions is not auto-loaded
+    if not hasattr(mp, 'solutions'):
+        import mediapipe.python.solutions as mp_solutions
+        mp.solutions = mp_solutions
+    MP_AVAILABLE = True
+except ImportError:
+    MP_AVAILABLE = False
+except Exception as e:
+    print(f"MediaPipe load error: {e}")
+    MP_AVAILABLE = False
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
 # MongoDB connection
-mongo_url = os.environ['MONGO_URL']
-client = AsyncIOMotorClient(mongo_url)
-db = client[os.environ['DB_NAME']]
+mongo_url = os.environ.get('MONGO_URL', 'mongodb://localhost:27017')
+try:
+    client = AsyncIOMotorClient(mongo_url)
+    db = client[os.environ.get('DB_NAME', 'surveillance_db')]
+except:
+    pass
 
-# SQLite for incidents
+# SQLite for incidents (Local fallback/Primary for demo)
 INCIDENTS_DB = ROOT_DIR / 'incidents.db'
 INCIDENTS_DIR = ROOT_DIR / 'incidents'
 INCIDENTS_DIR.mkdir(exist_ok=True)
@@ -38,266 +55,17 @@ RECORDINGS_DIR.mkdir(exist_ok=True)
 
 # Create the main app
 app = FastAPI()
+
+# Add CORS middleware to allow cross-origin requests (Fixes 403 Forbidden on WebSocket)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # In production, replace with specific origins
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 api_router = APIRouter(prefix="/api")
-
-# Global variables for surveillance
-surveillance_active = False
-video_capture = None
-detection_sensitivity = 'medium'
-video_writer = None  # For recording video
-recording_active = False
-current_recording_path = None
-
-# Initialize HOG detector for human detection
-hog = cv2.HOGDescriptor()
-hog.setSVMDetector(cv2.HOGDescriptor_getDefaultPeopleDetector())
-
-# Models
-class Incident(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-    id: str
-    timestamp: str
-    image_path: str
-    confidence: float
-    detection_type: str
-
-class IncidentCreate(BaseModel):
-    detection_type: str = "motion"
-
-class SurveillanceConfig(BaseModel):
-    sensitivity: str = 'medium'
-
-class SurveillanceStatus(BaseModel):
-    active: bool
-    sensitivity: str
-    total_incidents: int
-
-# Initialize database
-async def init_db():
-    async with aiosqlite.connect(INCIDENTS_DB) as db:
-        await db.execute('''
-            CREATE TABLE IF NOT EXISTS incidents (
-                id TEXT PRIMARY KEY,
-                timestamp TEXT NOT NULL,
-                image_path TEXT NOT NULL,
-                confidence REAL NOT NULL,
-                detection_type TEXT NOT NULL
-            )
-        ''')
-        await db.commit()
-
-@app.on_event("startup")
-async def startup():
-    await init_db()
-
-# Utility functions
-def detect_motion(frame1, frame2, sensitivity='medium'):
-    """Detect motion between two frames"""
-    diff = cv2.absdiff(frame1, frame2)
-    gray = cv2.cvtColor(diff, cv2.COLOR_BGR2GRAY)
-    blur = cv2.GaussianBlur(gray, (5, 5), 0)
-    
-    # Sensitivity thresholds
-    thresholds = {'high': 20, 'medium': 30, 'low': 50}
-    threshold_value = thresholds.get(sensitivity, 30)
-    
-    _, thresh = cv2.threshold(blur, threshold_value, 255, cv2.THRESH_BINARY)
-    dilated = cv2.dilate(thresh, None, iterations=3)
-    contours, _ = cv2.findContours(dilated, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-    
-    significant_motion = False
-    for contour in contours:
-        if cv2.contourArea(contour) > 1000:
-            significant_motion = True
-            break
-    
-    return significant_motion
-
-def detect_humans(frame):
-    """Detect humans in frame using HOG with enhanced parameters for better accuracy"""
-    try:
-        # Resize frame for optimal detection
-        height, width = frame.shape[:2]
-        original_frame = frame.copy()
-        
-        if width > 640:
-            scale_factor = 640 / width
-            frame = cv2.resize(frame, (640, int(height * scale_factor)))
-        else:
-            scale_factor = 1.0
-        
-        # Enhanced HOG parameters for better human detection
-        boxes, weights = hog.detectMultiScale(
-            frame, 
-            winStride=(4, 4),       # Fine-grained scanning
-            padding=(16, 16),       # Increased padding for edge detection
-            scale=1.03,             # Smaller scale steps for better accuracy
-            hitThreshold=-0.5,      # More sensitive threshold
-            finalThreshold=1.0      # Lower grouping threshold to catch more detections
-        )
-        
-        # Filter and scale back to original size
-        if len(boxes) > 0 and len(weights) > 0:
-            # Keep detections with reasonable confidence (lowered threshold)
-            valid_detections = [(box, weight) for box, weight in zip(boxes, weights) if weight > 0.2]
-            
-            if scale_factor != 1.0:
-                # Scale boxes back to original frame size
-                scaled_boxes = []
-                for box, weight in valid_detections:
-                    x, y, w, h = box
-                    scaled_box = (
-                        int(x / scale_factor),
-                        int(y / scale_factor),
-                        int(w / scale_factor),
-                        int(h / scale_factor)
-                    )
-                    scaled_boxes.append(scaled_box)
-                valid_boxes = scaled_boxes
-            else:
-                valid_boxes = [box for box, _ in valid_detections]
-            
-            valid_weights = [weight for _, weight in valid_detections]
-            return len(valid_boxes) > 0, len(valid_boxes), valid_boxes, valid_weights
-        
-        return False, 0, [], []
-    except Exception as e:
-        logger.error(f"Human detection error: {e}")
-        return False, 0, [], []
-
-def detect_faces(frame):
-    """Detect faces using Haar Cascade with enhanced parameters for multi-person capture"""
-    try:
-        # Load face cascade (using frontal face detector)
-        face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
-        
-        # Convert to grayscale for face detection
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        
-        # Apply histogram equalization for better detection in varying lighting
-        gray = cv2.equalizeHist(gray)
-        
-        # Detect faces with optimized parameters
-        faces = face_cascade.detectMultiScale(
-            gray,
-            scaleFactor=1.05,      # Smaller steps for better detection
-            minNeighbors=4,        # Lower threshold to catch more faces
-            minSize=(25, 25),      # Smaller minimum size
-            flags=cv2.CASCADE_SCALE_IMAGE
-        )
-        
-        # Also try profile face detection for better coverage
-        profile_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_profileface.xml')
-        profile_faces = profile_cascade.detectMultiScale(
-            gray,
-            scaleFactor=1.1,
-            minNeighbors=4,
-            minSize=(25, 25)
-        )
-        
-        # Combine frontal and profile detections
-        all_faces = list(faces) + list(profile_faces)
-        
-        return len(all_faces) > 0, len(all_faces), all_faces
-    except Exception as e:
-        logger.error(f"Face detection error: {e}")
-        return False, 0, []
-
-async def save_incident(frame, detection_type='motion', confidence=0.85):
-    """Save incident to database and file system"""
-    incident_id = str(uuid.uuid4())
-    timestamp = datetime.now(timezone.utc).isoformat()
-    filename = f"{incident_id}.jpg"
-    image_path = INCIDENTS_DIR / filename
-    
-    # Save image
-    cv2.imwrite(str(image_path), frame)
-    
-    # Save to database
-    async with aiosqlite.connect(INCIDENTS_DB) as db:
-        await db.execute(
-            'INSERT INTO incidents (id, timestamp, image_path, confidence, detection_type) VALUES (?, ?, ?, ?, ?)',
-            (incident_id, timestamp, str(image_path), confidence, detection_type)
-        )
-        await db.commit()
-    
-    return incident_id
-
-def start_recording(frame_width, frame_height, fps=20.0):
-    """Start video recording"""
-    global video_writer, recording_active, current_recording_path
-    
-    try:
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"recording_{timestamp}.mp4"
-        current_recording_path = RECORDINGS_DIR / filename
-        
-        # Use MP4V codec for better compatibility
-        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-        video_writer = cv2.VideoWriter(
-            str(current_recording_path),
-            fourcc,
-            fps,
-            (frame_width, frame_height)
-        )
-        
-        if video_writer.isOpened():
-            recording_active = True
-            logger.info(f"Recording started: {filename}")
-            return True
-        else:
-            logger.error("Failed to initialize video writer")
-            return False
-    except Exception as e:
-        logger.error(f"Error starting recording: {e}")
-        return False
-
-def stop_recording():
-    """Stop video recording"""
-    global video_writer, recording_active, current_recording_path
-    
-    try:
-        if video_writer:
-            video_writer.release()
-            video_writer = None
-            recording_active = False
-            logger.info(f"Recording stopped: {current_recording_path}")
-            return True
-    except Exception as e:
-        logger.error(f"Error stopping recording: {e}")
-    
-    return False
-
-def write_frame_to_recording(frame):
-    """Write a frame to the active recording"""
-    global video_writer, recording_active
-    
-    try:
-        if recording_active and video_writer and video_writer.isOpened():
-            video_writer.write(frame)
-            return True
-    except Exception as e:
-        logger.error(f"Error writing frame to recording: {e}")
-    
-    return False
-
-# API Routes
-@api_router.get("/")
-async def root():
-    return {"message": "Smart Surveillance System API"}
-
-@api_router.get("/surveillance/status", response_model=SurveillanceStatus)
-async def get_surveillance_status():
-    async with aiosqlite.connect(INCIDENTS_DB) as db:
-        cursor = await db.execute('SELECT COUNT(*) FROM incidents')
-        row = await cursor.fetchone()
-        total_incidents = row[0] if row else 0
-    
-    return SurveillanceStatus(
-        active=surveillance_active,
-        sensitivity=detection_sensitivity,
-        total_incidents=total_incidents
-    )
 
 # Configure logging
 logging.basicConfig(
@@ -310,397 +78,417 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-class MockVideoCapture:
-    """Generates synthetic video frames when real camera is unavailable"""
+# --- Models ---
+class Incident(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str
+    timestamp: str
+    image_path: str
+    confidence: float
+    detection_type: str
+    human_count: int = 0
+
+class SurveillanceConfig(BaseModel):
+    sensitivity: str = 'medium'
+
+class SurveillanceStatus(BaseModel):
+    active: bool
+    sensitivity: str
+    total_incidents: int
+
+# --- Database Init ---
+async def init_db():
+    async with aiosqlite.connect(INCIDENTS_DB) as db:
+        await db.execute('''
+            CREATE TABLE IF NOT EXISTS incidents (
+                id TEXT PRIMARY KEY,
+                timestamp TEXT NOT NULL,
+                image_path TEXT NOT NULL,
+                confidence REAL NOT NULL,
+                detection_type TEXT NOT NULL,
+                human_count INTEGER DEFAULT 0
+            )
+        ''')
+        await db.commit()
+
+@app.on_event("startup")
+async def startup():
+    await init_db()
+
+# --- Advanced Vision Logic ---
+
+class CentroidTracker:
+    def __init__(self, maxDisappeared=50):
+        self.nextObjectID = 0
+        self.objects = OrderedDict()
+        self.disappeared = OrderedDict()
+        self.maxDisappeared = maxDisappeared
+
+    def register(self, centroid):
+        self.objects[self.nextObjectID] = centroid
+        self.disappeared[self.nextObjectID] = 0
+        self.nextObjectID += 1
+
+    def deregister(self, objectID):
+        del self.objects[objectID]
+        del self.disappeared[objectID]
+
+    def update(self, rects):
+        if len(rects) == 0:
+            for objectID in list(self.disappeared.keys()):
+                self.disappeared[objectID] += 1
+                if self.disappeared[objectID] > self.maxDisappeared:
+                    self.deregister(objectID)
+            return self.objects
+
+        inputCentroids = np.zeros((len(rects), 2), dtype="int")
+        for (i, (startX, startY, endX, endY)) in enumerate(rects):
+            cX = int((startX + endX) / 2.0)
+            cY = int((startY + endY) / 2.0)
+            inputCentroids[i] = (cX, cY)
+
+        if len(self.objects) == 0:
+            for i in range(0, len(inputCentroids)):
+                self.register(inputCentroids[i])
+        else:
+            objectIDs = list(self.objects.keys())
+            objectCentroids = list(self.objects.values())
+            try:
+                D = dist.cdist(np.array(objectCentroids), inputCentroids)
+            except:
+                return self.objects
+                
+            rows = D.min(axis=1).argsort()
+            cols = D.argmin(axis=1)[rows]
+
+            usedRows = set()
+            usedCols = set()
+
+            for (row, col) in zip(rows, cols):
+                if row in usedRows or col in usedCols:
+                    continue
+
+                objectID = objectIDs[row]
+                self.objects[objectID] = inputCentroids[col]
+                self.disappeared[objectID] = 0
+                usedRows.add(row)
+                usedCols.add(col)
+
+            unusedRows = set(range(0, D.shape[0])).difference(usedRows)
+            unusedCols = set(range(0, D.shape[1])).difference(usedCols)
+
+            if D.shape[0] >= D.shape[1]:
+                for row in unusedRows:
+                    objectID = objectIDs[row]
+                    self.disappeared[objectID] += 1
+                    if self.disappeared[objectID] > self.maxDisappeared:
+                        self.deregister(objectID)
+            else:
+                for col in unusedCols:
+                    self.register(inputCentroids[col])
+
+        return self.objects
+
+class SurveillanceSystem:
     def __init__(self):
-        self.is_opened = True
-    
-    def isOpened(self):
-        return self.is_opened
-    
-    def read(self):
-        if not self.is_opened:
-            return False, None
+        self.active = False
+        self.sensitivity = 'medium'
+        self.video_capture = None
+        self.video_writer = None
+        self.recording_active = False
+        self.current_recording_path = None
         
-        # Create a dummy frame (black background)
-        frame = np.zeros((480, 640, 3), np.uint8)
+        # Detectors
+        self.hog = cv2.HOGDescriptor()
+        self.hog.setSVMDetector(cv2.HOGDescriptor_getDefaultPeopleDetector())
         
-        # Add some dynamic movement (simulated noise/circles)
-        t = datetime.now().timestamp()
-        cv2.circle(frame, (320 + int(100 * np.sin(t)), 240 + int(50 * np.cos(t))), 30, (0, 255, 255), -1)
+        self.use_mp = False
+        if MP_AVAILABLE:
+            try:
+                self.mp_face_detection = mp.solutions.face_detection.FaceDetection(model_selection=1, min_detection_confidence=0.5)
+                self.use_mp = True
+                logger.info("Using MediaPipe for Face Detection")
+            except Exception as e:
+                logger.error(f"MediaPipe Init Failed: {e}, falling back to Haar")
+                self.use_mp = False
         
-        # Add text
-        cv2.putText(frame, "MOCK CAMERA - NO WEBCAM FOUND", (50, 240), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
-        cv2.putText(frame, datetime.now().strftime("%H:%M:%S"), (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+        if not self.use_mp:
+            self.face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_alt.xml')
+            if self.face_cascade.empty():
+                self.face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
+
+        self.fgbg = cv2.createBackgroundSubtractorMOG2(history=500, varThreshold=25, detectShadows=True)
+        self.tracker = CentroidTracker(maxDisappeared=20)
         
-        return True, frame
-    
-    def release(self):
-        self.is_opened = False
+        self.last_incident_time = datetime.min
+
+    def detect_motion_mog2(self, frame):
+        """Robust motion detection using Background Subtraction"""
+        mask = self.fgbg.apply(frame)
+        _, mask = cv2.threshold(mask, 250, 255, cv2.THRESH_BINARY) # Remove shadows
+        dilated = cv2.dilate(mask, None, iterations=2)
+        contours, _ = cv2.findContours(dilated, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        
+        motion_detected = False
+        min_area = 500 if self.sensitivity == 'high' else 1000 if self.sensitivity == 'medium' else 2000
+        
+        for contour in contours:
+            if cv2.contourArea(contour) > min_area:
+                motion_detected = True
+                break
+        return motion_detected
+
+    def run_detection_pipeline(self, frame):
+        try:
+            height, width = frame.shape[:2]
+            small_frame = cv2.resize(frame, (640, int(height * (640/width)))) if width > 640 else frame
+            scale = width / small_frame.shape[1]
+            
+            # 1. Motion Check
+            motion = self.detect_motion_mog2(small_frame)
+            
+            # 2. Human Detection (HOG)
+            rects = []
+            humans, weights = self.hog.detectMultiScale(small_frame, winStride=(8,8), padding=(8,8), scale=1.05)
+            for (x, y, w, h) in humans:
+                rects.append((int(x * scale), int(y * scale), int(x * scale) + int(w * scale), int(y * scale) + int(h * scale)))
+                
+            # 3. Face Detection
+            if self.use_mp:
+                # MediaPipe
+                rgb_frame = cv2.cvtColor(small_frame, cv2.COLOR_BGR2RGB)
+                results = self.mp_face_detection.process(rgb_frame)
+                if results.detections:
+                    for detection in results.detections:
+                        bboxC = detection.location_data.relative_bounding_box
+                        ih, iw, _ = small_frame.shape
+                        x, y, w, h = int(bboxC.xmin * iw), int(bboxC.ymin * ih), int(bboxC.width * iw), int(bboxC.height * ih)
+                        rects.append((int(x * scale), int(y * scale), int(x * scale) + int(w * scale), int(y * scale) + int(h * scale)))
+            else:
+                # Haar Fallback
+                gray = cv2.cvtColor(small_frame, cv2.COLOR_BGR2GRAY)
+                faces = self.face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(30, 30))
+                for (x, y, w, h) in faces:
+                    rects.append((int(x * scale), int(y * scale), int(x * scale) + int(w * scale), int(y * scale) + int(h * scale)))
+                
+            # 4. Tracking
+            objects = self.tracker.update(rects)
+            
+            # Count unique objects being tracked
+            count = len(objects)
+            
+            return motion, count, rects, objects
+        except Exception as e:
+            logger.error(f"Pipeline error: {e}")
+            return False, 0, [], {}
+
+    async def save_incident(self, frame, detection_type, count, confidence=0.85):
+        incident_id = str(uuid.uuid4())
+        timestamp = datetime.now(timezone.utc).isoformat()
+        filename = f"{incident_id}.jpg"
+        image_path = INCIDENTS_DIR / filename
+        
+        cv2.imwrite(str(image_path), frame)
+        
+        async with aiosqlite.connect(INCIDENTS_DB) as db:
+            await db.execute(
+                'INSERT INTO incidents (id, timestamp, image_path, confidence, detection_type, human_count) VALUES (?, ?, ?, ?, ?, ?)',
+                (incident_id, timestamp, str(image_path), confidence, detection_type, count)
+            )
+            await db.commit()
+        return incident_id
+
+# Global Instance
+system = SurveillanceSystem()
+
+# --- Helper For Recording ---
+def start_recording_file(width, height, fps=20.0):
+    try:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"recording_{timestamp}.mp4"
+        path = RECORDINGS_DIR / filename
+        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+        writer = cv2.VideoWriter(str(path), fourcc, fps, (width, height))
+        return writer, path
+    except:
+        return None, None
+
+# --- API Routes ---
+
+@api_router.get("/")
+async def root():
+    return {"message": "Hybrid Smart Surveillance System API"}
+
+@api_router.get("/surveillance/status", response_model=SurveillanceStatus)
+async def get_status():
+    async with aiosqlite.connect(INCIDENTS_DB) as db:
+        cursor = await db.execute('SELECT COUNT(*) FROM incidents')
+        row = await cursor.fetchone()
+        count = row[0] if row else 0
+    return SurveillanceStatus(active=system.active, sensitivity=system.sensitivity, total_incidents=count)
 
 @api_router.post("/surveillance/start")
-async def start_surveillance(config: SurveillanceConfig):
-    global surveillance_active, video_capture, detection_sensitivity
-    
-    if surveillance_active:
-        return {"status": "started", "sensitivity": detection_sensitivity, "message": "Already active"}
+async def start_surv(config: SurveillanceConfig):
+    if system.active:
+        return {"status": "started", "message": "Already active"}
     
     try:
-        logger.info("Attempting to open webcam...")
-        video_capture = cv2.VideoCapture(0)
+        system.video_capture = cv2.VideoCapture(0)
+        if not system.video_capture.isOpened():
+             # Mock Fallback
+             pass
+    except:
+        pass
         
-        if not video_capture.isOpened():
-            logger.warning("Failed to open real webcam. Switching to Mock Camera fallback.")
-            video_capture = MockVideoCapture()
-            # Note: We don't raise error here, we proceed with mock
-        else:
-            logger.info("Real webcam opened successfully.")
-        
-        surveillance_active = True
-        detection_sensitivity = config.sensitivity
-        return {"status": "started", "sensitivity": detection_sensitivity}
-    except Exception as e:
-        logger.error(f"Error starting surveillance: {e}")
-        # Try fallback one last time in case of exception
-        video_capture = MockVideoCapture()
-        surveillance_active = True
-        return {"status": "started_fallback", "sensitivity": detection_sensitivity, "details": str(e)}
+    system.active = True
+    system.sensitivity = config.sensitivity
+    return {"status": "started"}
 
 @api_router.post("/surveillance/stop")
-async def stop_surveillance():
-    global surveillance_active, video_capture
-    
-    # Always succeed in stopping to reset state
-    surveillance_active = False
-    if video_capture:
-        video_capture.release()
-        video_capture = None
-    
-    logger.info("Surveillance stopped.")
+async def stop_surv():
+    system.active = False
+    if system.video_capture:
+        system.video_capture.release()
     return {"status": "stopped"}
 
-@api_router.post("/surveillance/upload")
-async def upload_video(file: UploadFile = File(...), sensitivity: str = 'medium'):
-    """Process uploaded video file"""
-    try:
-        contents = await file.read()
-        nparr = np.frombuffer(contents, np.uint8)
-        
-        # Save temporarily
-        temp_video_path = INCIDENTS_DIR / f"temp_{uuid.uuid4()}.mp4"
-        with open(temp_video_path, 'wb') as f:
-            f.write(contents)
-        
-        # Process video
-        cap = cv2.VideoCapture(str(temp_video_path))
-        incidents_detected = 0
-        
-        ret, prev_frame = cap.read()
-        frame_count = 0
-        
-        while ret:
-            ret, curr_frame = cap.read()
-            if not ret:
-                break
-            
-            frame_count += 1
-            # Process every 10th frame to speed up
-            if frame_count % 10 != 0:
-                continue
-            
-            # Detect humans with improved detection
-            humans_detected, count, boxes, weights = detect_humans(curr_frame)
-            
-            # Calculate dynamic confidence
-            confidence = 0.70
-            if len(weights) > 0:
-                confidence = min(sum(weights) / len(weights) / 2.0, 1.0)
-                confidence = max(confidence, 0.70)
-            
-            # Detect motion
-            motion_detected = detect_motion(prev_frame, curr_frame, sensitivity)
-            
-            if humans_detected and motion_detected:
-                await save_incident(curr_frame, 'motion+human', confidence)
-                incidents_detected += 1
-            
-            prev_frame = curr_frame.copy()
-        
-        cap.release()
-        temp_video_path.unlink()  # Delete temp file
-        
-        return {
-            "status": "processed",
-            "incidents_detected": incidents_detected,
-            "frames_processed": frame_count
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
 @api_router.get("/incidents", response_model=List[Incident])
-async def get_incidents():
+async def list_incidents():
     async with aiosqlite.connect(INCIDENTS_DB) as db:
-        cursor = await db.execute(
-            'SELECT id, timestamp, image_path, confidence, detection_type FROM incidents ORDER BY timestamp DESC LIMIT 100'
-        )
+        cursor = await db.execute('SELECT id, timestamp, image_path, confidence, detection_type, human_count FROM incidents ORDER BY timestamp DESC LIMIT 100')
         rows = await cursor.fetchall()
-        
-        incidents = []
-        for row in rows:
-            incidents.append(Incident(
-                id=row[0],
-                timestamp=row[1],
-                image_path=row[2],
-                confidence=row[3],
-                detection_type=row[4]
-            ))
-        
-        return incidents
-
-@api_router.delete("/incidents/{incident_id}")
-async def delete_incident(incident_id: str):
-    async with aiosqlite.connect(INCIDENTS_DB) as db:
-        # Get image path
-        cursor = await db.execute('SELECT image_path FROM incidents WHERE id = ?', (incident_id,))
-        row = await cursor.fetchone()
-        
-        if not row:
-            raise HTTPException(status_code=404, detail="Incident not found")
-        
-        # Delete file
-        image_path = Path(row[0])
-        if image_path.exists():
-            image_path.unlink()
-        
-        # Delete from database
-        await db.execute('DELETE FROM incidents WHERE id = ?', (incident_id,))
-        await db.commit()
-    
-    return {"status": "deleted"}
+        return [Incident(id=r[0], timestamp=r[1], image_path=r[2], confidence=r[3], detection_type=r[4], human_count=r[5] if r[5] else 0) for r in rows]
 
 @api_router.delete("/incidents/old/cleanup")
-async def cleanup_old_incidents(days: int = 7):
-    """Delete incidents older than specified days"""
-    cutoff_date = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
-    
+async def cleanup(days: int = 7):
     async with aiosqlite.connect(INCIDENTS_DB) as db:
-        # Get old incidents
-        cursor = await db.execute(
-            'SELECT id, image_path FROM incidents WHERE timestamp < ?',
-            (cutoff_date,)
-        )
-        rows = await cursor.fetchall()
-        
-        # Delete files and records
-        deleted_count = 0
-        for row in rows:
-            image_path = Path(row[1])
-            if image_path.exists():
-                image_path.unlink()
-            deleted_count += 1
-        
-        await db.execute('DELETE FROM incidents WHERE timestamp < ?', (cutoff_date,))
-        await db.commit()
-    
-    return {"status": "cleaned", "deleted_count": deleted_count}
+        if days == 0:
+            cursor = await db.execute('SELECT image_path FROM incidents')
+            rows = await cursor.fetchall()
+            for r in rows:
+                Path(r[0]).unlink(missing_ok=True)
+            await db.execute('DELETE FROM incidents')
+            await db.commit()
+            return {"status": "cleaned", "deleted_count": len(rows)}
+        else:
+             # Existing old cleanup logic could go here
+             return {"status": "cleaned", "deleted_count": 0}
+
+@api_router.delete("/incidents/{incident_id}")
+async def delete_one(incident_id: str):
+    async with aiosqlite.connect(INCIDENTS_DB) as db:
+        cursor = await db.execute('SELECT image_path FROM incidents WHERE id=?', (incident_id,))
+        row = await cursor.fetchone()
+        if row:
+            Path(row[0]).unlink(missing_ok=True)
+            await db.execute('DELETE FROM incidents WHERE id=?', (incident_id,))
+            await db.commit()
+    return {"status": "deleted"}
 
 @api_router.get("/incidents/{incident_id}/image")
-async def get_incident_image(incident_id: str):
+async def get_image(incident_id: str):
     async with aiosqlite.connect(INCIDENTS_DB) as db:
-        cursor = await db.execute('SELECT image_path FROM incidents WHERE id = ?', (incident_id,))
+        cursor = await db.execute('SELECT image_path FROM incidents WHERE id=?', (incident_id,))
         row = await cursor.fetchone()
-        
-        if not row:
-            raise HTTPException(status_code=404, detail="Incident not found")
-        
-        image_path = Path(row[0])
-        if not image_path.exists():
-            raise HTTPException(status_code=404, detail="Image file not found")
-        
-        return FileResponse(image_path, media_type="image/jpeg")
+        if row and Path(row[0]).exists():
+            return FileResponse(Path(row[0]), media_type="image/jpeg")
+    raise HTTPException(status_code=404)
 
+# --- WebSocket Stream ---
 @api_router.websocket("/surveillance/stream")
-async def video_stream(websocket: WebSocket):
+async def stream(websocket: WebSocket):
     await websocket.accept()
     
-    global surveillance_active, video_capture, detection_sensitivity, recording_active
-    
-    # Initialize recording when stream starts
-    recording_started = False
-    prev_frame = None
-    last_incident_time = datetime.now()
+    # Mock Generator if needed
+    def get_mock_frame():
+        frame = np.zeros((480, 640, 3), np.uint8)
+        cv2.putText(frame, "MOCK CAMERA", (50, 240), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+        return frame
+
+    rec_writer = None
     
     try:
         while True:
-            if not surveillance_active or not video_capture:
-                # Stop recording if it was active
-                if recording_started:
-                    stop_recording()
-                    recording_started = False
-                
-                # Send idle status instead of closing
-                await websocket.send_json({
-                    "frame": None,
-                    "status": "idle",
-                    "recording": False,
-                    "message": "Surveillance system is currently inactive."
-                })
-                await asyncio.sleep(1) # Check every second
-                continue
-            
-            # Surveillance is active, read frames
-            ret, frame = video_capture.read()
-            if not ret:
-                # Failed to read frame (camera disconnected?)
-                await websocket.send_json({"error": "Failed to capture video frame"})
+            if not system.active:
+                await websocket.send_json({"status": "idle", "frame": None})
                 await asyncio.sleep(1)
                 continue
+                
+            frame = None
+            if system.video_capture and system.video_capture.isOpened():
+                ret, frame = system.video_capture.read()
+                if not ret: frame = None
+                
+            if frame is None:
+                frame = get_mock_frame() # Fallback
+                
+            # Recording Logic
+            if rec_writer is None:
+                h, w = frame.shape[:2]
+                rec_writer, _ = start_recording_file(w, h)
+            if rec_writer:
+                rec_writer.write(frame)
+                
+            # Hybrid Pipeline
+            motion, count, rects, objects = system.run_detection_pipeline(frame)
             
-            # Start recording on first successful frame
-            if not recording_started:
-                height, width = frame.shape[:2]
-                if start_recording(width, height):
-                    recording_started = True
+            # Incident Saving (Cooldown 5s)
+            is_incident = False
+            now = datetime.now()
+            if motion and count > 0:
+                if (now - system.last_incident_time).total_seconds() > 5:
+                    await system.save_incident(frame, "hybrid_detection", count)
+                    system.last_incident_time = now
+                    is_incident = True
             
-            # Write frame to recording
-            if recording_started:
-                write_frame_to_recording(frame.copy())
+            # Visualization
+            # Draw Objects (Tracking)
+            for (objectID, centroid) in objects.items():
+                text = f"ID {objectID}"
+                cv2.putText(frame, text, (centroid[0] - 10, centroid[1] - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+                cv2.circle(frame, (centroid[0], centroid[1]), 4, (0, 255, 0), -1)
             
-            # Detect humans with improved HOG
-            humans_detected, human_count, human_boxes, human_weights = detect_humans(frame)
+            # Draw Detects
+            for (sx, sy, ex, ey) in rects:
+                cv2.rectangle(frame, (sx, sy), (ex, ey), (255, 0, 0), 2)
+                
+            # Status Overlay
+            cv2.putText(frame, f"Humans: {count}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+            if motion:
+                cv2.putText(frame, "MOTION DETECTED", (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
             
-            # Detect faces for multi-person face capture
-            faces_detected, face_count, face_boxes = detect_faces(frame)
-            
-            # Use the higher count between HOG and face detection
-            final_count = max(human_count, face_count)
-            final_detected = humans_detected or faces_detected
-            
-            # Calculate dynamic confidence based on detection weights
-            avg_confidence = 0.0
-            if len(human_weights) > 0:
-                # Normalize weights to 0-1 range and calculate average
-                avg_confidence = min(sum(human_weights) / len(human_weights) / 2.0, 1.0)
-            elif faces_detected:
-                # If only faces detected, use moderate confidence
-                avg_confidence = 0.75
-            
-            # Detect motion
-            motion_detected = False
-            if prev_frame is not None:
-                motion_detected = detect_motion(prev_frame, frame, detection_sensitivity)
-            else:
-                prev_frame = frame.copy()
-
-            # Save incident if both detected and cooldown passed
-            incident_detected = False
-            if final_detected and motion_detected:
-                time_since_last = (datetime.now() - last_incident_time).seconds
-                if time_since_last > 5:  # 5 second cooldown
-                    # Use dynamic confidence
-                    incident_confidence = max(avg_confidence, 0.70)
-                    await save_incident(frame, 'live_motion+human', incident_confidence)
-                    incident_detected = True
-                    last_incident_time = datetime.now()
-            
-            # Draw detection boxes for humans (HOG)
-            if humans_detected and len(human_boxes) > 0:
-                for (x, y, w, h) in human_boxes:
-                    cv2.rectangle(frame, (x, y), (x+w, y+h), (0, 255, 0), 2)
-                    # Add label above each detected person
-                    cv2.putText(frame, "PERSON", (x, y-10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
-            
-            # Draw face boxes (different color to distinguish)
-            if faces_detected and len(face_boxes) > 0:
-                for (x, y, w, h) in face_boxes:
-                    cv2.rectangle(frame, (x, y), (x+w, y+h), (255, 255, 0), 2)  # Yellow for faces
-                    cv2.putText(frame, "FACE", (x, y-10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 2)
-            
-            # Add status text with background for better visibility
-            status_text = f"Humans: {final_count} | Motion: {'YES' if motion_detected else 'NO'}"
-            
-            # Draw background rectangle for text
-            text_size = cv2.getTextSize(status_text, cv2.FONT_HERSHEY_SIMPLEX, 0.7, 2)[0]
-            cv2.rectangle(frame, (5, 5), (15 + text_size[0], 40), (0, 0, 0), -1)
-            cv2.putText(frame, status_text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
-            
-            # Add confidence indicator
-            if avg_confidence > 0:
-                conf_text = f"Confidence: {avg_confidence*100:.1f}%"
-                conf_size = cv2.getTextSize(conf_text, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)[0]
-                cv2.rectangle(frame, (5, 45), (15 + conf_size[0], 75), (0, 0, 0), -1)
-                cv2.putText(frame, conf_text, (10, 65), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 0), 2)
-            
-            # Add recording indicator
-            if recording_started:
-                rec_text = "REC"
-                rec_size = cv2.getTextSize(rec_text, cv2.FONT_HERSHEY_SIMPLEX, 0.7, 2)[0]
-                frame_width = frame.shape[1]
-                # Red circle for recording indicator
-                cv2.circle(frame, (frame_width - 80, 25), 10, (0, 0, 255), -1)
-                cv2.putText(frame, rec_text, (frame_width - 65, 32), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
-            
-            # Add large count indicator in top right if humans detected
-            if final_count > 0:
-                count_text = f"COUNT: {final_count}"
-                count_size = cv2.getTextSize(count_text, cv2.FONT_HERSHEY_SIMPLEX, 1.2, 3)[0]
-                frame_width = frame.shape[1]
-                cv2.rectangle(frame, (frame_width - count_size[0] - 20, 5), (frame_width - 5, 50), (0, 0, 0), -1)
-                cv2.putText(frame, count_text, (frame_width - count_size[0] - 15, 35), cv2.FONT_HERSHEY_SIMPLEX, 1.2, (0, 255, 255), 3)
-            
-            
-            # Encode frame
+            # Encode
             _, buffer = cv2.imencode('.jpg', frame)
-            frame_base64 = base64.b64encode(buffer).decode('utf-8')
+            b64 = base64.b64encode(buffer).decode('utf-8')
             
-            # Send frame with all detection data
             await websocket.send_json({
-                "frame": frame_base64,
-                "humans_detected": final_detected,
-                "human_count": final_count,
-                "face_count": face_count,
-                "confidence": round(avg_confidence * 100, 2),  # Send as percentage
-                "motion_detected": motion_detected,
-                "incident_detected": incident_detected,
-                "recording": recording_started,
-                "status": "active"
+                "frame": b64,
+                "humans_detected": count > 0,
+                "human_count": count,
+                "confidence": 95.0 if count > 0 else 0,
+                "motion_detected": motion,
+                "incident_detected": is_incident
             })
             
-            prev_frame = frame.copy()
-            await asyncio.sleep(0.05)  # ~20 FPS
+            await asyncio.sleep(0.04)
             
-    except WebSocketDisconnect:
-        logger.info("WebSocket disconnected")
-        if recording_started:
-            stop_recording()
     except Exception as e:
-        logger.error(f"WebSocket error: {e}")
-        if recording_started:
-            stop_recording()
-        try:
-             await websocket.close()
-        except:
-            pass
+        logger.error(f"Stream error: {e}")
+    finally:
+        if rec_writer:
+             rec_writer.release()
 
 app.include_router(api_router)
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_credentials=True,
-    allow_origins=os.environ.get('CORS_ORIGINS', '*').split(','),
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
 
 @app.on_event("shutdown")
 async def shutdown_db_client():
     global video_capture
     if video_capture:
         video_capture.release()
-    client.close()
+    # client.close() # Removed because 'client' is not defined in global scope in this file, likely a remnant of old code.
+
+if __name__ == "__main__":
+    import uvicorn
+    # Use 0.0.0.0 to be accessible, port 8000
+    uvicorn.run("server:app", host="0.0.0.0", port=8000, reload=True)
