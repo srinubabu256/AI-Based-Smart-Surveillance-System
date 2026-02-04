@@ -93,15 +93,17 @@ export default function LiveMonitoring() {
           setRecording(data.recording || false);
           setConnected(true);
 
-          // Track unique people
-          if (currentCount > 0) {
-            setTotalDetections(prev => prev + 1);
+          // Track unique people (Real)
+          if (data.active_object_ids && Array.isArray(data.active_object_ids)) {
             setUniquePeople(prev => {
               const newSet = new Set(prev);
-              newSet.add(`person_${Date.now()}_${currentCount}`);
-              const arr = Array.from(newSet);
-              return new Set(arr.slice(-100));
+              data.active_object_ids.forEach(id => newSet.add(id));
+              return newSet;
             });
+          }
+
+          if (currentCount > 0) {
+            setTotalDetections(prev => prev + 1);
           }
 
           // Calculate movement direction (Real data from backend now)

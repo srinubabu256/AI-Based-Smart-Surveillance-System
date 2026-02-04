@@ -456,6 +456,48 @@ async def stream(websocket: WebSocket):
             if motion:
                 cv2.putText(frame, "MOTION DETECTED", (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
             
+            # Calculate Movement Direction
+            direction_counts = {"Standing": 0, "Moving Left": 0, "Moving Right": 0, "Moving Up": 0, "Moving Down": 0}
+            
+            # We need previous positions to calculate direction. 
+            # Since CentroidTracker only stores current, we'll implement a simple history in SurveillanceSystem?
+            # Or just update the tracker to store history. 
+            # For now, let's keep it simple at the system level or assume we add it.
+            # Actually, let's rely on the tracker's consistency.
+            # We need a secondary store for "last frame's objects"
+            
+            if not hasattr(system, 'last_object_positions'):
+                system.last_object_positions = {}
+            
+            current_direction = "Standing"
+            active_ids = []
+            
+            for obj_id, centroid in objects.items():
+                active_ids.append(obj_id)
+                if obj_id in system.last_object_positions:
+                    prev_c = system.last_object_positions[obj_id]
+                    dx = centroid[0] - prev_c[0]
+                    dy = centroid[1] - prev_c[1]
+                    
+                    if abs(dx) > 2 or abs(dy) > 2: # Threshold
+                        if abs(dx) > abs(dy):
+                            if dx > 0: direction_counts["Moving Right"] += 1
+                            else: direction_counts["Moving Left"] += 1
+                        else:
+                            if dy > 0: direction_counts["Moving Down"] += 1
+                            else: direction_counts["Moving Up"] += 1
+                    else:
+                        direction_counts["Standing"] += 1
+                else:
+                    direction_counts["Standing"] += 1
+            
+            # Update history
+            system.last_object_positions = objects.copy()
+            
+            # Determine dominant direction
+            if count > 0:
+                current_direction = max(direction_counts, key=direction_counts.get)
+            
             # Encode
             _, buffer = cv2.imencode('.jpg', frame)
             b64 = base64.b64encode(buffer).decode('utf-8')
@@ -466,7 +508,9 @@ async def stream(websocket: WebSocket):
                 "human_count": count,
                 "confidence": 95.0 if count > 0 else 0,
                 "motion_detected": motion,
-                "incident_detected": is_incident
+                "incident_detected": is_incident,
+                "movement_direction": current_direction,
+                "active_object_ids": active_ids
             })
             
             await asyncio.sleep(0.04)

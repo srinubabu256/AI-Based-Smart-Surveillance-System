@@ -14240,3 +14240,27 @@
 2026-02-03 19:22:08,448 - server - ERROR - Stream error: received 1005 (no status received [internal]); then sent 1005 (no status received [internal])
 2026-02-03 19:22:08,535 - watchfiles.main - INFO - 1 change detected
 2026-02-03 19:22:50,833 - server - ERROR - Stream error: received 1005 (no status received [internal]); then sent 1005 (no status received [internal])
+2026-02-03 19:24:00,461 - watchfiles.main - INFO - 1 change detected
+2026-02-03 19:24:04,726 - watchfiles.main - INFO - 1 change detected
+2026-02-03 19:24:26,191 - watchfiles.main - INFO - 1 change detected
+2026-02-03 19:25:04,395 - watchfiles.main - INFO - 1 change detected
+2026-02-03 19:25:05,090 - watchfiles.main - INFO - 1 change detected
+2026-02-03 19:25:26,910 - watchfiles.main - INFO - 1 change detected
+2026-02-03 19:40:00,207 - server - ERROR - Stream error: no close frame received or sent
+2026-02-03 19:40:00,300 - server - ERROR - Stream error: no close frame received or sent
+2026-02-03 19:40:20,259 - watchfiles.main - INFO - 1 change detected
+2026-02-03 19:41:39,311 - watchfiles.main - INFO - 1 change detected
+2026-02-03 19:41:40,700 - watchfiles.main - INFO - 1 change detected
+2026-02-03 19:41:54,942 - watchfiles.main - INFO - 1 change detected
+2026-02-03 19:41:56,337 - watchfiles.main - INFO - 1 change detected
+2026-02-03 19:41:59,486 - watchfiles.main - INFO - 1 change detected
+2026-02-03 19:42:00,024 - watchfiles.main - INFO - 4 changes detected
+2026-02-03 19:42:00,470 - watchfiles.main - INFO - 3 changes detected
+2026-02-03 19:42:00,901 - watchfiles.main - INFO - 2 changes detected
+2026-02-03 19:42:01,321 - watchfiles.main - INFO - 2 changes detected
+2026-02-03 19:42:02,741 - watchfiles.main - INFO - 1 change detected
+2026-02-03 19:42:07,462 - watchfiles.main - INFO - 1 change detected
+2026-02-03 19:42:08,551 - watchfiles.main - INFO - 1 change detected
+2026-02-03 19:46:09,960 - watchfiles.main - INFO - 1 change detected
+2026-02-03 19:48:54,919 - watchfiles.main - INFO - 1 change detected
+2026-02-03 20:06:28,353 - watchfiles.main - INFO - 1 change detected
